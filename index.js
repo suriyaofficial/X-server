@@ -6,6 +6,7 @@ const { initializeApp } = require("firebase/app");
 const { getFirestore } = require("@firebase/firestore");
 const { getDoc, doc, collection, setDoc } = require("firebase/firestore");
 const firebaseConfig = require("./firebaseconfig"); // Import the Firebase configuration
+const http = require('http')
 const app = express();
 app.use(express.json());
 app.use(cors());
@@ -17,19 +18,31 @@ app.use(cors());
 const firebaseApp = initializeApp(firebaseConfig);
 const db = getFirestore(firebaseApp);
 const PORT = process.env.PORT || 3100;
+const hostname = '0.0.0.0';
+const port = 3100
 
-const init = async () => {
-    try {
-        app.listen(PORT, () => {
-            console.log(`Server is running on port ${PORT}`);
-        });
+// init()
+// const init = async () => {
+//     try {
+//         app.listen(PORT, () => {
+//             console.log(`Server is running on port ${PORT}`);
+//         });
 
-    } catch (error) {
-        console.log("🚀 ~ file: index.js:13 ~ init ~ error:", error)
+//     } catch (error) {
+//         console.log("🚀 ~ file: index.js:13 ~ init ~ error:", error)
 
-    }
-}
-init()
+//     }
+// }
+
+const server = http.createServer((req, res) => {
+    res.statusCode = 200
+    res.setHeader('Content-Type', 'text/plain')
+    res.end('server running')
+})
+
+server.listen(port, hostname, () => {
+    console.log(`🚀 Server is running on  http://${hostname}:${port}/`)
+})
 app.post("/users/", async (request, response) => {
     const { username, name, password, gender, location } = request.body;
     const hashedpassword = await bcrypt.hash(password, 10);
