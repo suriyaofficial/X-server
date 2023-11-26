@@ -29,7 +29,7 @@ const port = 3100
 // init()
 
 const server = http.createServer(async (req, res) => {
-    if (req.method === 'GET' && req.url === '/weather') {
+    if (req.method === 'GET' && req.url === '/weather/') {
         res.statusCode = 200;
         res.setHeader('Content-Type', 'text/plain');
         res.end('Hi! Today\'s weather is cloudy.');
@@ -39,35 +39,54 @@ const server = http.createServer(async (req, res) => {
         res.end('Hi! greeting');
     }
     else if (req.method === 'POST' && req.url === '/login/') {
-        const { username, password } = req.body;
-        console.log("🚀 ~ file: index.js:54 ~ app.post ~ rquest.body:", req.body)
-        const docRef = doc(db, "Users", username);
-        const docSnap = await getDoc(docRef);
-        const getUser = docSnap.data();
-        console.log("🚀 ~ file: index.js:58 ~ app.post ~ getUser:", getUser)
-        if (getUser) {
-            console.log("user exist");
-            const passwordMatch = await bcrypt.compare(password, getUser.hashedpassword);
-            if (passwordMatch) {
-                const payload = { username: getUser.username };
-                const jwt_token = jwt.sign(payload, "token");
 
-                res.status(200)
-                res.send({ result: "loged in success", JWT: jwt_token })
+        let data = '';
+
+        // Receive data from the request
+        req.on('data', chunk => {
+            data += chunk;
+        });
+
+        // Process data when the request ends
+        req.on('end', async () => {
+            const parsedData = querystring.parse(data);
+            console.log("🚀 ~ file: index.js:53 ~ req.on ~ parsedData:", parsedData)
+
+            // Extract the username and password
+            const username = parsedData.username;
+            const password = parsedData.password;
+            const docRef = doc(db, "Users", username);
+            const docSnap = await getDoc(docRef);
+            const getUser = docSnap.data();
+            console.log("🚀 ~ file: index.js:58 ~ app.post ~ getUser:", getUser)
+
+            if (getUser) {
+                console.log("user exist");
+                const passwordMatch = await bcrypt.compare(password, getUser.hashedpassword);
+                if (passwordMatch) {
+                    const payload = { username: getUser.username };
+                    const jwt_token = jwt.sign(payload, "token");
+
+                    res.statusCode = 200
+                    res.setHeader('Content-Type', 'application/json');
+                    res.end(JSON.stringify({ result: "loged in success", JWT: jwt_token }))
+                } else {
+                    res.statusCode = 401
+                    res.setHeader('Content-Type', 'application/json');
+                    res.end(JSON.stringify({ result: "wrong password" }))
+                }
             } else {
-                res.status(401)
-                res.send({ result: "wrong password" })
+                res.statusCode = 404
+                res.setHeader('Content-Type', 'application/json');
+                res.end(JSON.stringify({ result: "user not found" }))
             }
-        } else {
-            res.status(404)
-            res.send({ result: "user not found" })
-        }
-
+        });
     } else {
         res.statusCode = 200
         res.setHeader('Content-Type', 'text/plain')
         res.end('server running---ok ')
     }
+
 })
 
 server.listen(port, () => {
