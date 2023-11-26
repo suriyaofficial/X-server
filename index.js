@@ -10,8 +10,10 @@ const db = getFirestore(firebaseApp);
 const hostname = '0.0.0.0';
 const port = 3100
 
-const authorization = async (request, response, next) => {
-    const token = request.headers["authorization"] && request.headers["authorization"].split(" ")[1];
+const authorization = async (req, res, next) => {
+    const token = req.headers["authorization"] && req.headers["authorization"].split(" ")[1];
+    console.log("🚀 ~ file: index.js:15 ~ authorization ~ req.headers:", req.headers)
+    console.log("🚀 ~ file: index.js:15 ~ authorization ~ token:", token)
 
     try {
         if (token) {
