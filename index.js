@@ -51,12 +51,14 @@ const server = http.createServer(async (req, res) => {
 
         // Process data when the request ends
         req.on('end', async () => {
-            const parsedData = querystring.parse(data);
-            console.log("🚀 ~ file: index.js:53 ~ req.on ~ parsedData:", parsedData)
+            const jsonData = JSON.parse(data);
+            console.log("🚀 ~ file: index.js:55 ~ req.on ~ jsonData:", jsonData)
 
             // Extract the username and password
-            const username = parsedData.username;
-            const password = parsedData.password;
+            const username = jsonData.username;
+            console.log("🚀 ~ file: index.js:59 ~ req.on ~ username:", username)
+            const password = jsonData.password;
+            console.log("🚀 ~ file: index.js:61 ~ req.on ~ password:", password)
             const docRef = doc(db, "Users", username);
             const docSnap = await getDoc(docRef);
             const getUser = docSnap.data();
