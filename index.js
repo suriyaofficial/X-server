@@ -12,14 +12,13 @@ const port = 3100
 
 const authorization = async (req, res, next) => {
     const token = req.headers["authorization"] && req.headers["authorization"].split(" ")[1];
-    console.log("🚀 ~ file: index.js:15 ~ authorization ~ req.headers:", req.headers)
     console.log("🚀 ~ file: index.js:15 ~ authorization ~ token:", token)
 
     try {
         if (token) {
             let data = jwt.verify(token, "token");
             req.username = data.username;
-            // next();
+            next();
         } else {
             throw new Error("Token not provided");
         }
