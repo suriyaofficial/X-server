@@ -18,7 +18,7 @@ const authorization = async (req, res, next) => {
     try {
         if (token) {
             let data = jwt.verify(token, "token");
-            request.username = data.username;
+            req.username = data.username;
             next();
         } else {
             throw new Error("Token not provided");
@@ -36,7 +36,7 @@ const server = http.createServer(async (req, res) => {
         authorization(req, res, async () => {
             res.statusCode = 200;
             res.setHeader('Content-Type', 'text/plain');
-            res.end('Hi! Today\'s weather is cloudy.');
+            res.end(`Hi! ${req.username}Today\'s weather is cloudy.`);
         });
     }
     else if (req.method === 'GET' && req.url === '/msg/') {
