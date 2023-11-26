@@ -22,7 +22,10 @@ const authorization = async (request, response, next) => {
             throw new Error("Token not provided");
         }
     } catch (error) {
-        response.status(401).json({ error: "Unauthorized" });
+        res.statusCode = 401;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ error: "Unauthorized" }));
+
     }
 };
 
