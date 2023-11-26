@@ -19,7 +19,7 @@ const authorization = async (req, res, next) => {
         if (token) {
             let data = jwt.verify(token, "token");
             req.username = data.username;
-            next();
+            // next();
         } else {
             throw new Error("Token not provided");
         }
