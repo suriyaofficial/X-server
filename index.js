@@ -35,7 +35,8 @@ const server = http.createServer(async (req, res) => {
         res.statusCode = 200;
         res.setHeader('Content-Type', 'text/plain');
         res.end('Hi! Today\'s weather is cloudy.');
-    } else if (req.method === 'GET' && req.url === '/msg/') {
+    }
+    else if (req.method === 'GET' && req.url === '/msg/') {
         res.statusCode = 200;
         res.setHeader('Content-Type', 'text/plain');
         res.end('Hi! greeting');
@@ -85,7 +86,48 @@ const server = http.createServer(async (req, res) => {
                 res.end(JSON.stringify({ result: "user not found" }))
             }
         });
-    } else {
+    }
+    else if (req.method === 'POST' && req.url === '/register/') {
+        let data = '';
+
+        // Receive data from the request
+        req.on('data', chunk => {
+            data += chunk;
+        });
+
+        // Process data when the request ends
+        req.on('end', async () => {
+            const jsonData = JSON.parse(data);
+
+            // Extract necessary information from the request body
+            const { username, password, } = jsonData;
+            const hashedpassword = await bcrypt.hash(password, 10);
+
+            // Check if the user already exists
+            const docRef = doc(db, "Users", username);
+            const docSnap = await getDoc(docRef);
+            const existingUser = docSnap.data();
+
+            if (existingUser) {
+                res.statusCode = 400;
+                res.setHeader('Content-Type', 'application/json');
+                res.end(JSON.stringify({ result: "user already exists" }));
+            } else {
+                // User does not exist, proceed with registration
+                const usersCollectionRef = collection(db, "Users");
+                const userDocRef = doc(usersCollectionRef, username);
+
+                // Set user data in the database
+                await setDoc(userDocRef, { username, hashedpassword });
+
+                res.statusCode = 201;
+                res.setHeader('Content-Type', 'application/json');
+                res.end(JSON.stringify({ result: "user registered successfully" }));
+            }
+        });
+
+    }
+    else {
         res.statusCode = 200
         res.setHeader('Content-Type', 'text/plain')
         res.end('server running---ok ')
@@ -96,53 +138,53 @@ const server = http.createServer(async (req, res) => {
 server.listen(port, () => {
     console.log(`🚀 Server is running on  http://${hostname}:${port}/`)
 })
-app.post("/users/", async (request, response) => {
-    const { username, name, password, gender, location } = request.body;
-    const hashedpassword = await bcrypt.hash(password, 10);
-    const docRef = doc(db, "Users", username);
-    const docSnap = await getDoc(docRef);
-    let resumeData = docSnap.data();
-    if (resumeData) {
-        response.status(400);
-        response.send({ result: "user already exist" })
+// app.post("/users/", async (request, response) => {
+//     const { username, password } = request.body;
+//     const hashedpassword = await bcrypt.hash(password, 10);
+//     const docRef = doc(db, "Users", username);
+//     const docSnap = await getDoc(docRef);
+//     let resumeData = docSnap.data();
+//     if (resumeData) {
+//         response.status(400);
+//         response.send({ result: "user already exist" })
 
-    } else {
-        const usersCollectionRef = collection(db, "Users");
-        const userDocRef = doc(usersCollectionRef, username); // Replace 'userId' with your desired ID
-        await setDoc(userDocRef, { username, name, hashedpassword, gender, location });
-        response.status(201);
-        response.send({ result: "user register sucessfully" })
-    }
-})
+//     } else {
+//         const usersCollectionRef = collection(db, "Users");
+//         const userDocRef = doc(usersCollectionRef, username); // Replace 'userId' with your desired ID
+//         await setDoc(userDocRef, { username, name, hashedpassword, gender, location });
+//         response.status(201);
+//         response.send({ result: "user register sucessfully" })
+//     }
+// })
 
-app.get("/hi/", async (request, response) => {
-    response.status(200);
-    response.send({ result: "request made successfully" })
-})
-app.post("/login/", async (request, response) => {
-    const { username, password } = request.body;
-    console.log("🚀 ~ file: index.js:54 ~ app.post ~ rquest.body:", request.body)
-    const docRef = doc(db, "Users", username);
-    const docSnap = await getDoc(docRef);
-    const getUser = docSnap.data();
-    console.log("🚀 ~ file: index.js:58 ~ app.post ~ getUser:", getUser)
-    if (getUser) {
-        console.log("user exist");
-        const passwordMatch = await bcrypt.compare(password, getUser.hashedpassword);
-        if (passwordMatch) {
-            const payload = { username: getUser.username };
-            const jwt_token = jwt.sign(payload, "token");
+// app.get("/hi/", async (request, response) => {
+//     response.status(200);
+//     response.send({ result: "request made successfully" })
+// })
+// app.post("/login/", async (request, response) => {
+//     const { username, password } = request.body;
+//     console.log("🚀 ~ file: index.js:54 ~ app.post ~ rquest.body:", request.body)
+//     const docRef = doc(db, "Users", username);
+//     const docSnap = await getDoc(docRef);
+//     const getUser = docSnap.data();
+//     console.log("🚀 ~ file: index.js:58 ~ app.post ~ getUser:", getUser)
+//     if (getUser) {
+//         console.log("user exist");
+//         const passwordMatch = await bcrypt.compare(password, getUser.hashedpassword);
+//         if (passwordMatch) {
+//             const payload = { username: getUser.username };
+//             const jwt_token = jwt.sign(payload, "token");
 
-            response.status(200)
-            response.send({ result: "loged in success", JWT: jwt_token })
-        } else {
-            response.status(401)
-            response.send({ result: "wrong password" })
-        }
-    } else {
-        response.status(404)
-        response.send({ result: "user not found" })
-    }
+//             response.status(200)
+//             response.send({ result: "loged in success", JWT: jwt_token })
+//         } else {
+//             response.status(401)
+//             response.send({ result: "wrong password" })
+//         }
+//     } else {
+//         response.status(404)
+//         response.send({ result: "user not found" })
+//     }
 
 
-});
+// });
