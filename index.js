@@ -40,7 +40,7 @@ const server = http.createServer((req, res) => {
     res.end('server running---ok ')
 })
 
-server.listen(port, hostname, () => {
+server.listen(port, () => {
     console.log(`🚀 Server is running on  http://${hostname}:${port}/`)
 })
 app.post("/users/", async (request, response) => {
@@ -62,33 +62,33 @@ app.post("/users/", async (request, response) => {
     }
 })
 
-server.post("/login/", async (request, response) => {
-    const { username, password } = request.body;
-    console.log("🚀 ~ file: index.js:54 ~ app.post ~ rquest.body:", request.body)
-    const docRef = doc(db, "Users", username);
-    const docSnap = await getDoc(docRef);
-    const getUser = docSnap.data();
-    console.log("🚀 ~ file: index.js:58 ~ app.post ~ getUser:", getUser)
-    if (getUser) {
-        console.log("user exist");
-        const passwordMatch = await bcrypt.compare(password, getUser.hashedpassword);
-        if (passwordMatch) {
-            const payload = { username: getUser.username };
-            const jwt_token = jwt.sign(payload, "token");
+// server.post("/login/", async (request, response) => {
+//     const { username, password } = request.body;
+//     console.log("🚀 ~ file: index.js:54 ~ app.post ~ rquest.body:", request.body)
+//     const docRef = doc(db, "Users", username);
+//     const docSnap = await getDoc(docRef);
+//     const getUser = docSnap.data();
+//     console.log("🚀 ~ file: index.js:58 ~ app.post ~ getUser:", getUser)
+//     if (getUser) {
+//         console.log("user exist");
+//         const passwordMatch = await bcrypt.compare(password, getUser.hashedpassword);
+//         if (passwordMatch) {
+//             const payload = { username: getUser.username };
+//             const jwt_token = jwt.sign(payload, "token");
 
-            response.status(200)
-            response.send({ result: "loged in success", JWT: jwt_token })
-        } else {
-            response.status(401)
-            response.send({ result: "wrong password" })
-        }
-    } else {
-        response.status(404)
-        response.send({ result: "user not found" })
-    }
+//             response.status(200)
+//             response.send({ result: "loged in success", JWT: jwt_token })
+//         } else {
+//             response.status(401)
+//             response.send({ result: "wrong password" })
+//         }
+//     } else {
+//         response.status(404)
+//         response.send({ result: "user not found" })
+//     }
 
 
-});
+// });
 app.post("/login/", async (request, response) => {
     const { username, password } = request.body;
     console.log("🚀 ~ file: index.js:54 ~ app.post ~ rquest.body:", request.body)
