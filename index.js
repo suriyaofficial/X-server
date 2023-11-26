@@ -2,6 +2,8 @@ const express = require("express");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const cors = require("cors");
+const querystring = require('querystring');
+
 const { initializeApp } = require("firebase/app");
 const { getFirestore } = require("@firebase/firestore");
 const { getDoc, doc, collection, setDoc } = require("firebase/firestore");
@@ -33,7 +35,7 @@ const server = http.createServer(async (req, res) => {
         res.statusCode = 200;
         res.setHeader('Content-Type', 'text/plain');
         res.end('Hi! Today\'s weather is cloudy.');
-    } else if (req.method === 'GET' && req.url === '/msg') {
+    } else if (req.method === 'GET' && req.url === '/msg/') {
         res.statusCode = 200;
         res.setHeader('Content-Type', 'text/plain');
         res.end('Hi! greeting');
