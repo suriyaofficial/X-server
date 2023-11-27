@@ -2,12 +2,15 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
+const cors = require("cors");
 
 const { initializeApp } = require('firebase/app');
 const { getFirestore, doc, getDoc, setDoc, collection } = require('@firebase/firestore');
 const firebaseConfig = require('./firebaseconfig');
 
 const app = express();
+// app.use(express.json());
+app.use(cors());
 const port = 3100;
 
 const firebaseApp = initializeApp(firebaseConfig);
