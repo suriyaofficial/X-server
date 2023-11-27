@@ -36,7 +36,7 @@ app.get('/weather/', authorization, (req, res) => {
     res.status(200).send(`Hi! ${req.username} Today's weather is cloudy.`);
 });
 
-app.get('/msg/', (req, res) => {
+app.get('/msg/', authorization, (req, res) => {
     res.status(200).send('Hi! greeting');
 });
 
@@ -81,7 +81,18 @@ app.post('/register/', async (req, res) => {
         res.status(201).json({ result: 'user registered successfully' });
     }
 });
-
+app.post('/userNameCheck/', async (req, res) => {
+    console.log("🚀 ~ file: app.js:85 ~ app.post ~ req:")
+    const { username } = req.body;
+    const docRef = doc(db, 'Users', username);
+    const docSnap = await getDoc(docRef);
+    const existingUser = docSnap.data();
+    if (existingUser) {
+        res.status(400).json({ result: 'user already exists' });
+    } else {
+        res.status(201).json({ result: 'username availble' });
+    }
+});
 app.use((req, res) => {
     res.status(200).send('server running---ok');
 });
