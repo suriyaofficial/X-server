@@ -21,7 +21,6 @@ app.use(bodyParser.json());
 
 const authorization = (req, res, next) => {
     const token = req.headers.authorization && req.headers.authorization.split(' ')[1];
-    // console.log('🚀 ~ authorization ~ token:', token);
 
     try {
         if (token) {
@@ -49,7 +48,6 @@ app.post('/add/device/', authorization, async (req, res) => {
     const uuid = await uuidv4()
     const docRef = doc(db, 'Users', req.username);
     const docSnap = await getDoc(docRef);
-    console.log("🚀 ~ file: app.js:51 ~ app.post ~ docRef:", docSnap.data())
     const currentData = docSnap.exists() ? docSnap.data() : {};
     const getUser = currentData.device || [];
     const deviceNameExist = getUser.some(device => device.deviceName === NewDeviceName);
@@ -73,16 +71,11 @@ app.post('/add/device/', authorization, async (req, res) => {
 app.put('/control/device/', authorization, async (req, res) => {
     // const NewDeviceName = req.body.deviceName;
     const { id, status } = req.body;
-    console.log("🚀 ~ file: app.js:76 ~ app.put ~ status:", status)
-    console.log("🚀 ~ file: app.js:76 ~ app.put ~ id:", id)
-
     const docRef = doc(db, 'Users', req.username);
     const docSnap = await getDoc(docRef);
-    console.log("🚀 ~ file: app.js:51 ~ app.post ~ docRef:", docSnap.data())
     let Data = docSnap.data()
     const newData = { ...Data };
     const deviceToUpdate = newData.device.find(device => device.deviceId === id);
-    console.log("🚀 ~ file: app.js:82 ~ app.put ~ deviceToUpdate:", deviceToUpdate)
     if (deviceToUpdate) {
         deviceToUpdate.status = status;
         // Update the document with the modified data
@@ -122,7 +115,6 @@ app.post('/register/', async (req, res) => {
     const { username, password } = req.body;
     const hashedpassword = await bcrypt.hash(password, 10);
     const uuid = await uuidv4()
-    console.log("🚀 ~ file: app.js:93 ~ app.post ~ uuid:", uuid)
 
     const docRef = doc(db, 'Users', username);
     const docSnap = await getDoc(docRef);
@@ -133,8 +125,6 @@ app.post('/register/', async (req, res) => {
     } else {
         const usersCollectionRef = collection(db, 'Users');
         const userDocRef = doc(usersCollectionRef, username);
-        console.log("🚀 ~ file: app.js:101 ~ app.post ~ userDocRef:", userDocRef)
-
         await setDoc(userDocRef, {
             username, hashedpassword, "device": [{ "deviceName": "light1", "deviceId": uuid, "status": false }]
         });
@@ -143,7 +133,6 @@ app.post('/register/', async (req, res) => {
     }
 });
 app.post('/userNameCheck/', async (req, res) => {
-    console.log("🚀 ~ file: app.js:85 ~ app.post ~ req:")
     const { username } = req.body;
     const docRef = doc(db, 'Users', username);
     const docSnap = await getDoc(docRef);
@@ -155,13 +144,11 @@ app.post('/userNameCheck/', async (req, res) => {
     }
 });
 app.post('/createPost/', async (req, res) => {
-    console.log("🚀 ~ file: app.js:85 ~ app.post ~ req:")
     const { username, body } = req.body;
     // get data//
     const docRef = doc(db, 'Post', "posts");
     const docSnap = await getDoc(docRef);
     let Data = docSnap.data();
-    console.log("🚀 ~ file: app.js:104 ~ app.post ~ docSnap:", Data.all)
     let existingData = Data.all
     let newData = {
         "userId": 123,
