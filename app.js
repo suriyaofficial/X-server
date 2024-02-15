@@ -39,9 +39,7 @@ app.get('/weather/', authorization, (req, res) => {
 });
 
 app.get('/msg/', authorization, (req, res) => {
-    console.log("🚀 ~ file: app.js:43 ~ app.get ~ req:", req)
-    // const { username } = req.body;
-    res.status(200).send(`Hi! greeting${req.username}`);
+    res.status(200).send(`Hi! greeting ${req.username}`);
 });
 
 app.post('/add/device/', authorization, async (req, res) => {
