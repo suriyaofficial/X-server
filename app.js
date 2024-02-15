@@ -45,13 +45,27 @@ app.get('/msg/', authorization, (req, res) => {
 
 app.post('/add/device/', authorization, async (req, res) => {
     console.log("🚀 ~ file: app.js:47 ~ app.post ~ req.body:", req.body)
-
+    deviceName
+    status
+    uudi
+    const deviceName = req.body;
     const docRef = doc(db, 'Users', req.username);
     const docSnap = await getDoc(docRef);
     const getUser = docSnap.data();
     console.log("🚀 ~ file: app.js:52 ~ app.post ~ getUser:", getUser)
+    const deviceNameExist = getUser.device.some(device => device.deviceName === deviceName);
+    let data
+    if (deviceNameExist) {
+        console.log("🚀 ~ if", deviceNameExist)
+        data = { "isThere": true }
 
-    res.status(200).json({ result: getUser });
+    } else {
+        console.log("🚀 ~ else", deviceNameExist)
+        data = { "isThere": false }
+
+    }
+
+    res.status(200).json({ result: data });
 
 });
 app.post('/login/', async (req, res) => {
