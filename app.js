@@ -21,7 +21,8 @@ app.use(bodyParser.json());
 
 const authorization = (req, res, next) => {
     const token = req.headers.authorization && req.headers.authorization.split(' ')[1];
-    console.log('🚀 ~ authorization ~ token:', token);
+    // console.log('🚀 ~ authorization ~ token:', token);
+
     try {
         if (token) {
             let data = jwt.verify(token, 'token');
@@ -44,25 +45,55 @@ app.get('/msg/', authorization, (req, res) => {
 });
 
 app.post('/add/device/', authorization, async (req, res) => {
-    console.log("🚀 ~ file: app.js:47 ~ app.post ~ req.body:", req.body)
-    const deviceName = req.body;
+    const NewDeviceName = req.body.deviceName;
+    const uuid = await uuidv4()
     const docRef = doc(db, 'Users', req.username);
     const docSnap = await getDoc(docRef);
-    const getUser = docSnap.data();
-    console.log("🚀 ~ file: app.js:52 ~ app.post ~ getUser:", getUser)
-    const deviceNameExist = getUser.device.some(device => device.deviceName === deviceName);
-    let data
+    console.log("🚀 ~ file: app.js:51 ~ app.post ~ docRef:", docSnap.data())
+    const currentData = docSnap.exists() ? docSnap.data() : {};
+    const getUser = currentData.device || [];
+    const deviceNameExist = getUser.some(device => device.deviceName === NewDeviceName);
     if (deviceNameExist) {
-        console.log("🚀 ~ if", deviceNameExist)
-        data = { "isThere": true }
-
+        res.status(409).json({
+            "error": "Device Name already exists",
+            "message": `The device with name ${NewDeviceName} already exists in the system.`
+        });
     } else {
-        console.log("🚀 ~ else", deviceNameExist)
-        data = { "isThere": false }
+        let newDevice = { "deviceName": NewDeviceName, "deviceId": uuid, "status": false }
+        const updatedDevices = [...getUser, newDevice];
+        const usersCollectionRef = collection(db, 'Users');
+        const userDocRef = doc(usersCollectionRef, req.username);
+        await setDoc(userDocRef, { ...currentData, "device": updatedDevices });
+        res.status(201).json({ result: "created" });
 
     }
 
-    res.status(200).json({ result: data });
+
+});
+app.put('/control/device/', authorization, async (req, res) => {
+    // const NewDeviceName = req.body.deviceName;
+    const { id, status } = req.body;
+    console.log("🚀 ~ file: app.js:76 ~ app.put ~ status:", status)
+    console.log("🚀 ~ file: app.js:76 ~ app.put ~ id:", id)
+
+    const docRef = doc(db, 'Users', req.username);
+    const docSnap = await getDoc(docRef);
+    console.log("🚀 ~ file: app.js:51 ~ app.post ~ docRef:", docSnap.data())
+    let Data = docSnap.data()
+    const newData = { ...Data };
+    const deviceToUpdate = newData.device.find(device => device.deviceId === id);
+    console.log("🚀 ~ file: app.js:82 ~ app.put ~ deviceToUpdate:", deviceToUpdate)
+    if (deviceToUpdate) {
+        deviceToUpdate.status = status;
+        // Update the document with the modified data
+        await setDoc(docRef, newData);
+        res.status(200).json({ result: "changed" });
+
+    } else {
+        res.status(404).json({ result: "not found" });
+
+    }
+
 
 });
 app.post('/login/', async (req, res) => {
