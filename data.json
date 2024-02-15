@@ -1,14 +1,31 @@
 {
+    "username": "suriya_Official",
     "device": [
         {
+            "status": false,
             "deviceName": "light1",
-            "deviceId": "n1kjn1",
-            "status": false
+            "deviceId": "94fa2113-234e-41c5-9506-1b457bb96569"
         },
         {
             "deviceName": "light2",
-            "deviceId": "lkjlkjak",
+            "deviceId": "96ae9835-1810-44f8-9087-265c9b8e2f5f",
             "status": false
+        },
+        {
+            "deviceId": "916f0df8-841b-4b03-8e3f-f39183686803",
+            "status": false,
+            "deviceName": "light3"
+        },
+        {
+            "deviceName": "light4",
+            "status": false,
+            "deviceId": "ad9f807b-966e-435e-b4cb-009705a9bbe1"
+        },
+        {
+            "deviceName": "light5",
+            "deviceId": "8691812d-0629-43cf-b594-f274da6e6a64",
+            "status": true
         }
-    ]
+    ],
+    "hashedpassword": "$2b$10$CiNsw/3Cv1gyAgHb/Js5r.hbMcidIp4.It12eDj4jepJ0SN3Ype8e"
 }
