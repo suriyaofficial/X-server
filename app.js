@@ -45,9 +45,6 @@ app.get('/msg/', authorization, (req, res) => {
 
 app.post('/add/device/', authorization, async (req, res) => {
     console.log("🚀 ~ file: app.js:47 ~ app.post ~ req.body:", req.body)
-    deviceName
-    status
-    uudi
     const deviceName = req.body;
     const docRef = doc(db, 'Users', req.username);
     const docSnap = await getDoc(docRef);
