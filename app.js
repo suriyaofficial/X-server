@@ -51,6 +51,7 @@ app.post('/add/device/', authorization, async (req, res) => {
     const getUser = docSnap.data();
     console.log("🚀 ~ file: app.js:52 ~ app.post ~ getUser:", getUser)
 
+    res.status(200).json({ result: getUser });
 
 });
 app.post('/login/', async (req, res) => {
