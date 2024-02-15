@@ -2,6 +2,7 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
+const { v4: uuidv4 } = require('uuid');
 const cors = require("cors");
 
 const { initializeApp } = require('firebase/app');
@@ -43,25 +44,14 @@ app.get('/msg/', authorization, (req, res) => {
 });
 
 app.post('/add/device/', authorization, async (req, res) => {
-    const { username, password } = req.body;
+    console.log("🚀 ~ file: app.js:47 ~ app.post ~ req.body:", req.body)
 
-    const docRef = doc(db, 'Users', username);
+    const docRef = doc(db, 'Users', req.username);
     const docSnap = await getDoc(docRef);
     const getUser = docSnap.data();
+    console.log("🚀 ~ file: app.js:52 ~ app.post ~ getUser:", getUser)
 
-    if (getUser) {
-        const passwordMatch = await bcrypt.compare(password, getUser.hashedpassword);
-        if (passwordMatch) {
-            const payload = { username: getUser.username };
-            const jwt_token = jwt.sign(payload, 'token');
 
-            res.status(200).json({ result: 'logged in successfully', JWT: jwt_token });
-        } else {
-            res.status(401).json({ result: 'wrong password' });
-        }
-    } else {
-        res.status(404).json({ result: 'user not found' });
-    }
 });
 app.post('/login/', async (req, res) => {
     const { username, password } = req.body;
@@ -88,6 +78,8 @@ app.post('/login/', async (req, res) => {
 app.post('/register/', async (req, res) => {
     const { username, password } = req.body;
     const hashedpassword = await bcrypt.hash(password, 10);
+    const uuid = await uuidv4()
+    console.log("🚀 ~ file: app.js:93 ~ app.post ~ uuid:", uuid)
 
     const docRef = doc(db, 'Users', username);
     const docSnap = await getDoc(docRef);
@@ -98,8 +90,11 @@ app.post('/register/', async (req, res) => {
     } else {
         const usersCollectionRef = collection(db, 'Users');
         const userDocRef = doc(usersCollectionRef, username);
+        console.log("🚀 ~ file: app.js:101 ~ app.post ~ userDocRef:", userDocRef)
 
-        await setDoc(userDocRef, { username, hashedpassword });
+        await setDoc(userDocRef, {
+            username, hashedpassword, "device": [{ "deviceName": "light1", "deviceId": uuid, "status": false }]
+        });
 
         res.status(201).json({ result: 'user registered successfully' });
     }

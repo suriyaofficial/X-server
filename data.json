@@ -1,0 +1,14 @@
+{
+    "device": [
+        {
+            "deviceName": "light1",
+            "deviceId": "n1kjn1",
+            "status": false
+        },
+        {
+            "deviceName": "light2",
+            "deviceId": "lkjlkjak",
+            "status": false
+        }
+    ]
+}
