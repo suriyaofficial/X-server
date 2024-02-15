@@ -24,7 +24,6 @@ const authorization = (req, res, next) => {
     try {
         if (token) {
             let data = jwt.verify(token, 'token');
-            console.log("🚀 ~ file: app.js:27 ~ authorization ~ data:", data)
             req.username = data.username;
             next();
         } else {
@@ -40,8 +39,9 @@ app.get('/weather/', authorization, (req, res) => {
 });
 
 app.get('/msg/', authorization, (req, res) => {
-    const { username } = req.body;
-    res.status(200).send('Hi! greeting', username);
+    console.log("🚀 ~ file: app.js:43 ~ app.get ~ req:", req)
+    // const { username } = req.body;
+    res.status(200).send(`Hi! greeting${req.username}`);
 });
 
 app.post('/add/device/', authorization, async (req, res) => {
