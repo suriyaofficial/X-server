@@ -2,6 +2,7 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const WebSocket = require('ws');
 const http = require('http');
+
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const { v4: uuidv4 } = require('uuid');
@@ -10,6 +11,8 @@ const { initializeApp } = require('firebase/app');
 const { getFirestore, doc, getDoc, setDoc, collection } = require('@firebase/firestore');
 const firebaseConfig = require('./firebaseconfig');
 const app = express();
+const http1 = require('http').Server(express);
+const path = require('path')
 // app.use(express.json());
 app.use(cors());
 const port = 3100;
@@ -17,32 +20,14 @@ const firebaseApp = initializeApp(firebaseConfig);
 const db = getFirestore(firebaseApp);
 app.use(bodyParser.json());
 const server = http.createServer(app);
-const wss = new WebSocket.Server({ server });
-wss.on('connection', (ws) => {
-    console.log("🚀 ~ file: app.js:21 ~ wss.o ~ ws:", ws)
-    console.log('WebSocket Client Connected');
+const io = require('socket.io')(http1)
+// const wss = new WebSocket.Server({ server });
 
-    ws.on('message', (message) => {
-        console.log(`Received message: ${message}`);
-        // Handle messages from Arduino if needed
-    });
-
-    // You can send initial data to Arduino on connection if needed
-    // ws.send('Hello Arduino!');
-});
-const sendToArduino = (deviceId, status) => {
-    console.log("🚀 ~ file: app.js:32 ~ sendToArduino ~ status:", status)
-    console.log("🚀 ~ file: app.js:32 ~ sendToArduino ~ deviceId:", deviceId)
-    // Construct your message to send to Arduino
-    const message = JSON.stringify({ deviceId, status });
-
-    // Broadcast the message to all connected Arduino clients
-    wss.clients.forEach((client) => {
-        if (client.readyState === WebSocket.OPEN) {
-            client.send(message);
-        }
-    });
-};
+app.get('/', function (req, res) {
+    let option = { root: path.join(__dirname) }
+    let fileName = 'index.html'
+    res.sendFile(fileName, option)
+})
 const authorization = (req, res, next) => {
     const token = req.headers.authorization && req.headers.authorization.split(' ')[1];
     try {
@@ -80,6 +65,15 @@ app.post('/add/device/', authorization, async (req, res) => {
         res.status(201).json({ result: "created" });
     }
 });
+app.post('/getStatus/', authorization, async (req, res) => {
+    const docRef = doc(db, 'Users', req.username);
+    const docSnap = await getDoc(docRef);
+    const currentData = docSnap.exists() ? docSnap.data() : {};
+    const getUser = currentData.device || [];
+    console.log("🚀 ~ file: app.js:72 ~ app.post ~ currentData:", currentData)
+    console.log("🚀 ~ file: app.js:74 ~ app.post ~ getUser:", getUser)
+    res.status(409).json({ getUser });
+});
 app.put('/control/device/', authorization, async (req, res) => {
     const { id, status } = req.body;
     const docRef = doc(db, 'Users', req.username);
@@ -90,7 +84,6 @@ app.put('/control/device/', authorization, async (req, res) => {
     if (deviceToUpdate) {
         deviceToUpdate.status = status;
         await setDoc(docRef, newData);
-        sendToArduino(id, status);
         res.status(200).json({ result: "changed" });
     } else {
         res.status(404).json({ result: "not found" });
