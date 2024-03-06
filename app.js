@@ -62,7 +62,7 @@ app.post('/add/device/', authorization, async (req, res) => {
         res.status(201).json({ result: "created" });
     }
 });
-app.post('/getStatus/', authorization, async (req, res) => {
+app.get('/getStatus/', authorization, async (req, res) => {
     const docRef = doc(db, 'Users', req.username);
     const docSnap = await getDoc(docRef);
     const currentData = docSnap.exists() ? docSnap.data() : {};
