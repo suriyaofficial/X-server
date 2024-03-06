@@ -2,7 +2,7 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const WebSocket = require('ws');
 const http = require('http');
-
+const path = require('path')
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const { v4: uuidv4 } = require('uuid');
@@ -11,17 +11,13 @@ const { initializeApp } = require('firebase/app');
 const { getFirestore, doc, getDoc, setDoc, collection } = require('@firebase/firestore');
 const firebaseConfig = require('./firebaseconfig');
 const app = express();
-const http1 = require('http').Server(express);
-const path = require('path')
+// const http1 = require('http').Server(express);
 // app.use(express.json());
 app.use(cors());
 const port = 3100;
 const firebaseApp = initializeApp(firebaseConfig);
 const db = getFirestore(firebaseApp);
 app.use(bodyParser.json());
-const server = http.createServer(app);
-const io = require('socket.io')(http1)
-// const wss = new WebSocket.Server({ server });
 
 app.get('/', function (req, res) {
     let option = { root: path.join(__dirname) }
@@ -29,6 +25,7 @@ app.get('/', function (req, res) {
     res.sendFile(fileName, option)
 })
 const authorization = (req, res, next) => {
+    console.log("🚀 ~ file: app.js:32 ~ authorization ~ req:", req)
     const token = req.headers.authorization && req.headers.authorization.split(' ')[1];
     try {
         if (token) {
@@ -72,7 +69,7 @@ app.post('/getStatus/', authorization, async (req, res) => {
     const getUser = currentData.device || [];
     console.log("🚀 ~ file: app.js:72 ~ app.post ~ currentData:", currentData)
     console.log("🚀 ~ file: app.js:74 ~ app.post ~ getUser:", getUser)
-    res.status(409).json({ getUser });
+    res.status(200).json({ getUser });
 });
 app.put('/control/device/', authorization, async (req, res) => {
     const { id, status } = req.body;
@@ -141,6 +138,7 @@ app.get('/weather/', authorization, (req, res) => {
 
 app.get('/msg/', authorization, (req, res) => {
     res.status(200).send(`Hi! greeting ${req.username}`);
+    console.log("🚀 ~ file: app.js:145 ~ app.get ~ req.username:", req.username)
 });
 app.post('/userNameCheck/', async (req, res) => {
     const { username } = req.body;
