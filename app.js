@@ -1,7 +1,5 @@
 const express = require('express');
 const bodyParser = require('body-parser');
-const WebSocket = require('ws');
-const http = require('http');
 const path = require('path')
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
@@ -10,14 +8,40 @@ const cors = require("cors");
 const { initializeApp } = require('firebase/app');
 const { getFirestore, doc, getDoc, setDoc, collection } = require('@firebase/firestore');
 const firebaseConfig = require('./firebaseconfig');
+const http = require('http'); // Import the HTTP module
+const { Server } = require('socket.io'); // Import the Socket.IO library
 const app = express();
-// const http1 = require('http').Server(express);
-// app.use(express.json());
 app.use(cors());
 const port = 3100;
 const firebaseApp = initializeApp(firebaseConfig);
 const db = getFirestore(firebaseApp);
 app.use(bodyParser.json());
+
+
+const server = http.createServer(app);
+
+// Create a Socket.IO server and attach it to the HTTP server
+const io = new Server(server);
+
+// Store connected clients
+const clients = new Set();
+
+// Socket.IO connection handling
+io.on('connection', (socket) => {
+    console.log('Socket.IO connection established');
+    clients.add(socket);
+
+    // Handle Socket.IO disconnect event
+    socket.on('disconnect', () => {
+        console.log('Socket.IO connection closed');
+        clients.delete(socket);
+    });
+});
+const notifyClients = (message) => {
+    clients.forEach((client) => {
+        client.emit('statusChange', message);
+    });
+};
 
 app.get('/', function (req, res) {
     let option = { root: path.join(__dirname) }
@@ -82,6 +106,7 @@ app.put('/control/device/', authorization, async (req, res) => {
         deviceToUpdate.status = status;
         await setDoc(docRef, newData);
         res.status(200).json({ result: "changed" });
+        notifyClients({ success: true, message: "Status changed successfully" });
     } else {
         res.status(404).json({ result: "not found" });
     }
