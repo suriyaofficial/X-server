@@ -38,7 +38,9 @@ io.on('connection', (socket) => {
     });
 });
 const notifyClients = (message) => {
+    console.log("🚀 ~ file: app.js:41 ~ notifyClients ~ message:", message)
     clients.forEach((client) => {
+        console.log("🚀 ~ file: app.js:43 ~ clients.forEach ~ client:")
         client.emit('statusChange', message);
     });
 };
@@ -49,7 +51,7 @@ app.get('/', function (req, res) {
     res.sendFile(fileName, option)
 })
 const authorization = (req, res, next) => {
-    console.log("🚀 ~ file: app.js:32 ~ authorization ~ req:", req)
+    // console.log("🚀 ~ file: app.js:32 ~ authorization ~ req:", req)
     const token = req.headers.authorization && req.headers.authorization.split(' ')[1];
     try {
         if (token) {
@@ -103,6 +105,7 @@ app.put('/control/device/', authorization, async (req, res) => {
     const newData = { ...Data };
     const deviceToUpdate = newData.device.find(device => device.deviceId === id);
     if (deviceToUpdate) {
+        console.log("🚀 ~ file: app.js:106 ~ app.put ~ deviceToUpdate:")
         deviceToUpdate.status = status;
         await setDoc(docRef, newData);
         res.status(200).json({ result: "changed" });
