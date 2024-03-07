@@ -67,7 +67,7 @@ app.get('/getStatus/', authorization, async (req, res) => {
     const getUser = currentData.device || [];
     res.status(200).json({ getUser });
 });
-app.post('/userNameCheck/', authorization, async (req, res) => {
+app.post('/userNameCheck/', async (req, res) => {
     const { username } = req.body;
     console.log("🚀 ~ file: app.js:141 ~ app.post ~ username:", username)
     const docRef = doc(db, 'Users', username);
