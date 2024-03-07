@@ -8,8 +8,7 @@ const cors = require("cors");
 const { initializeApp } = require('firebase/app');
 const { getFirestore, doc, getDoc, setDoc, collection } = require('@firebase/firestore');
 const firebaseConfig = require('./firebaseconfig');
-const http = require('http'); // Import the HTTP module
-const { Server } = require('socket.io'); // Import the Socket.IO library
+
 const app = express();
 app.use(cors());
 const port = 3100;
@@ -17,41 +16,14 @@ const firebaseApp = initializeApp(firebaseConfig);
 const db = getFirestore(firebaseApp);
 app.use(bodyParser.json());
 
-
-const server = http.createServer(app);
-
-// Create a Socket.IO server and attach it to the HTTP server
-const io = new Server(server);
-
-// Store connected clients
-const clients = new Set();
-
-// Socket.IO connection handling
-io.on('connection', (socket) => {
-    console.log('Socket.IO connection established');
-    clients.add(socket);
-
-    // Handle Socket.IO disconnect event
-    socket.on('disconnect', () => {
-        console.log('Socket.IO connection closed');
-        clients.delete(socket);
-    });
-});
-const notifyClients = (message) => {
-    console.log("🚀 ~ file: app.js:41 ~ notifyClients ~ message:", message)
-    clients.forEach((client) => {
-        console.log("🚀 ~ file: app.js:43 ~ clients.forEach ~ client:")
-        client.emit('statusChange', message);
-    });
-};
-
 app.get('/', function (req, res) {
     let option = { root: path.join(__dirname) }
     let fileName = 'index.html'
     res.sendFile(fileName, option)
 })
 const authorization = (req, res, next) => {
-    // console.log("🚀 ~ file: app.js:32 ~ authorization ~ req:", req)
+    console.log("🚀 ~ file: app.js:32 ~ authorization ~ req:")
+    console.log("🚀 ~ file: app.js:32 ~ authorization ~ req:", req.headers.authorization)
     const token = req.headers.authorization && req.headers.authorization.split(' ')[1];
     try {
         if (token) {
@@ -93,9 +65,19 @@ app.get('/getStatus/', authorization, async (req, res) => {
     const docSnap = await getDoc(docRef);
     const currentData = docSnap.exists() ? docSnap.data() : {};
     const getUser = currentData.device || [];
-    console.log("🚀 ~ file: app.js:72 ~ app.post ~ currentData:", currentData)
-    console.log("🚀 ~ file: app.js:74 ~ app.post ~ getUser:", getUser)
     res.status(200).json({ getUser });
+});
+app.get('/userNameCheck/', authorization, async (req, res) => {
+    const { username } = req.body;
+    console.log("🚀 ~ file: app.js:141 ~ app.post ~ username:", username)
+    const docRef = doc(db, 'Users', username);
+    const docSnap = await getDoc(docRef);
+    const existingUser = docSnap.data();
+    if (existingUser) {
+        res.status(400).json({ result: 'user already exists' });
+    } else {
+        res.status(201).json({ result: 'username availble' });
+    }
 });
 app.put('/control/device/', authorization, async (req, res) => {
     const { id, status } = req.body;
@@ -109,9 +91,8 @@ app.put('/control/device/', authorization, async (req, res) => {
         deviceToUpdate.status = status;
         await setDoc(docRef, newData);
         res.status(200).json({ result: "changed" });
-        notifyClients({ success: true, message: "Status changed successfully" });
     } else {
-        res.status(404).json({ result: "not found" });
+        res.status(404).json({ result: "device Id not found" });
     }
 });
 app.post('/login/', async (req, res) => {
@@ -154,7 +135,7 @@ app.post('/register/', async (req, res) => {
 });
 
 app.use((req, res) => {
-    res.status(200).send('server running---ok');
+    res.status(200).send('server running---o');
 });
 
 app.listen(port, () => {
@@ -168,17 +149,7 @@ app.get('/msg/', authorization, (req, res) => {
     res.status(200).send(`Hi! greeting ${req.username}`);
     console.log("🚀 ~ file: app.js:145 ~ app.get ~ req.username:", req.username)
 });
-app.post('/userNameCheck/', async (req, res) => {
-    const { username } = req.body;
-    const docRef = doc(db, 'Users', username);
-    const docSnap = await getDoc(docRef);
-    const existingUser = docSnap.data();
-    if (existingUser) {
-        res.status(400).json({ result: 'user already exists' });
-    } else {
-        res.status(201).json({ result: 'username availble' });
-    }
-});
+
 app.post('/createPost/', async (req, res) => {
     const { username, body } = req.body;
     // get data//
