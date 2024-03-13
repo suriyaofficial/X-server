@@ -8,13 +8,42 @@ const cors = require("cors");
 const { initializeApp } = require('firebase/app');
 const { getFirestore, doc, getDoc, setDoc, collection } = require('@firebase/firestore');
 const firebaseConfig = require('./firebaseconfig');
+const http = require('http');
+const socketIo = require('socket.io');
 
 const app = express();
-app.use(cors());
+app.use(cors()); // Enable CORS for all routes
+
 const port = 3100;
 const firebaseApp = initializeApp(firebaseConfig);
 const db = getFirestore(firebaseApp);
 app.use(bodyParser.json());
+
+const server = http.createServer(app);
+const io = socketIo(server, {
+    cors: {
+        origin: "*", // Specify the allowed origin for Socket.io
+        // methods: ["GET", "POST"]
+    }
+});
+
+io.on('connection', (socket) => {
+    console.log('A user connected');
+
+    // Listen for messages from the client
+    // Disconnect event
+    socket.on('disconnect', () => {
+        console.log('User disconnected');
+    });
+});
+
+server.listen(port, () => {
+    console.log(`🚀 Server is running on http://localhost:${port}`);
+});
+
+// ... rest of your code ...
+
+
 
 app.get('/', function (req, res) {
     let option = { root: path.join(__dirname) }
@@ -22,8 +51,8 @@ app.get('/', function (req, res) {
     res.sendFile(fileName, option)
 })
 const authorization = (req, res, next) => {
-    console.log("🚀 ~ file: app.js:32 ~ authorization ~ req:")
-    console.log("🚀 ~ file: app.js:32 ~ authorization ~ req:", req.headers.authorization)
+    // console.log("🚀 ~ file: app.js:32 ~ authorization ~ req:")
+    // console.log("🚀 ~ file: app.js:32 ~ authorization ~ req:", req.headers.authorization)
     const token = req.headers.authorization && req.headers.authorization.split(' ')[1];
     try {
         if (token) {
@@ -66,6 +95,9 @@ app.get('/getStatus/', authorization, async (req, res) => {
     const currentData = docSnap.exists() ? docSnap.data() : {};
     const getUser = currentData.device || [];
     res.status(200).json({ getUser });
+    // io.emit('message', true);
+
+
 });
 app.post('/userNameCheck/', async (req, res) => {
     const { username } = req.body;
@@ -91,6 +123,7 @@ app.put('/control/device/', authorization, async (req, res) => {
         deviceToUpdate.status = status;
         await setDoc(docRef, newData);
         res.status(200).json({ result: "changed" });
+        io.emit('message', `chanage`);
     } else {
         res.status(404).json({ result: "device Id not found" });
     }
@@ -138,9 +171,7 @@ app.use((req, res) => {
     res.status(200).send('server running---ok');
 });
 
-app.listen(port, () => {
-    console.log(`🚀 Server is running on http://localhost:${port}/`);
-});
+
 app.get('/weather/', authorization, (req, res) => {
     res.status(200).send(`Hi! ${req.username} Today's weather is cloudy.`);
 });
