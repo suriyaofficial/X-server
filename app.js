@@ -22,7 +22,7 @@ app.use(bodyParser.json());
 const server = http.createServer(app);
 const io = socketIo(server, {
     cors: {
-        origin: "https://x-server.onrender.com", // Specify the allowed origin for Socket.io
+        origin: "*", // Specify the allowed origin for Socket.io
         // methods: ["GET", "POST"]
     }
 });
@@ -171,7 +171,7 @@ app.post('/register/', async (req, res) => {
 //     res.status(200).send('server running---ok');
 // });
 app.use((req, res, next) => {
-    res.header("Access-Control-Allow-Origin", "http://localhost:3000");
+    res.header("Access-Control-Allow-Origin", "*");
     res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE");
     res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
     next();
