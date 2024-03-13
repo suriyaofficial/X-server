@@ -22,7 +22,7 @@ app.use(bodyParser.json());
 const server = http.createServer(app);
 const io = socketIo(server, {
     cors: {
-        origin: "*", // Specify the allowed origin for Socket.io
+        origin: "https://x-server.onrender.com", // Specify the allowed origin for Socket.io
         // methods: ["GET", "POST"]
     }
 });
