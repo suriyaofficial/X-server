@@ -1,12 +1,11 @@
 
 module.exports = {
-    apiKey: "AIzaSyDLqVtHV6CIJO7tekS7rvyrm1wOrS6UNaE",
-    authDomain: "chit-chat-sparrow.firebaseapp.com",
-    projectId: "chit-chat-sparrow",
-    storageBucket: "chit-chat-sparrow.appspot.com",
-    messagingSenderId: "981651993231",
-    appId: "1:981651993231:web:c230a297722ee8380176fa",
-    measurementId: "G-V9F7NKG8BE"
+    apiKey: "AIzaSyA5ALvrT1jy6AI60pKQzp1csJgX0Q7UY8I",
+    authDomain: "travel-spend-tracker.firebaseapp.com",
+    projectId: "travel-spend-tracker",
+    storageBucket: "travel-spend-tracker.appspot.com",
+    messagingSenderId: "368640826754",
+    appId: "1:368640826754:web:1c51e1d5794e6d40a7c39b"
 };
 
 
