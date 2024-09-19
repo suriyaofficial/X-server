@@ -26,14 +26,7 @@ const firebaseApp = initializeApp(firebaseConfig);
 const db = getFirestore(firebaseApp);
 app.use(bodyParser.json());
 const server = http.createServer(app);
-var admin = require("firebase-admin");
 
-var serviceAccount = require("./travel-spend-tracker-firebase-adminsdk-rel8k-42b360b1ed.json");
-// const { deleteDoc } = require("firebase/firestore");
-
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount),
-});
 
 const io = socketIo(server, {
   cors: {
@@ -52,17 +45,6 @@ server.listen(port, () => {
   console.log(`🚀 Server is running on http://localhost:${port}`);
 });
 
-app.post("/verifyToken", async (req, res) => {
-  const idToken = req.body.idToken;
-
-  try {
-    const decodedToken = await admin.auth().verifyIdToken(idToken);
-    const uid = decodedToken.uid;
-    res.status(200).send({ uid });
-  } catch (error) {
-    res.status(401).send("Unauthorized");
-  }
-});
 
 app.get("/", function (req, res) {
   let option = { root: path.join(__dirname) };
