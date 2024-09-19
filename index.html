@@ -1,18 +1,107 @@
+<!DOCTYPE html>
 <html lang="en">
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Document</title>
+    <title>Main Page</title>
+    <style>
+        body {
+            background-color: #000;
+            color: #0f0;
+            font-family: 'Courier New', Courier, monospace;
+            overflow: hidden;
+            margin: 0;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+        }
+
+        .falling-letters {
+            position: absolute;
+            top: 0;
+            white-space: nowrap;
+            font-size: 20px;
+            animation: fall linear infinite;
+        }
+
+        @keyframes fall {
+            0% {
+                top: -100%;
+            }
+
+            100% {
+                top: 100%;
+            }
+        }
+
+        .typewriter h1 {
+            border: 2px solid #0f0;
+            padding: 10px;
+            overflow: hidden;
+            white-space: nowrap;
+            margin: 0 auto;
+            letter-spacing: 2px;
+            animation: typing 4s steps(22, end), blink-caret .75s step-end infinite;
+        }
+
+        @keyframes typing {
+            from {
+                width: 0;
+            }
+
+            to {
+                width: 100%;
+            }
+        }
+
+        @keyframes blink-caret {
+
+            from,
+            to {
+                border-color: transparent;
+            }
+
+            50% {
+                border-color: #0f0;
+            }
+        }
+    </style>
 </head>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.4/socket.io.js"
-    integrity="sha512-tE1z+95+lMCGwy+9PnKgUSIeHhvioC9lMlI7rLWU0Ps3XTdjRygLcy4mLuL0JAoK4TLdQEyP0yOl/9dMOqpH/Q=="
-    crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 
 <body>
-    <h1>hwllo</h1>
+    <div class="typewriter">
+        <h1>server running...</h1>
+    </div>
+    <div id="container"></div>
+
+    <script>
+        function generateRandomLetter() {
+            const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+            return characters.charAt(Math.floor(Math.random() * characters.length));
+        }
+
+        function createFallingLetters() {
+            const clusterSize = Math.floor(Math.random() * 10) + 5; // Create clusters of 5 to 15 letters
+            for (let i = 0; i < clusterSize; i++) {
+                const letter = document.createElement('div');
+                letter.classList.add('falling-letters');
+                letter.textContent = generateRandomLetter();
+                letter.style.left = `${Math.random() * 100}vw`;
+                letter.style.animationDuration = `${Math.random() * 3 + 2}s`;
+                letter.style.fontSize = `${Math.random() * 15 + 15}px`; // Randomize font size
+                document.body.appendChild(letter);
+
+                setTimeout(() => {
+                    document.body.removeChild(letter);
+                }, 5000); // Adjust the timeout to match the animation duration
+            }
+        }
+
+        setInterval(createFallingLetters, 100); // Adjust the interval for density of letters
+    </script>
 </body>
-<script>
-</script>
 
 </html>
