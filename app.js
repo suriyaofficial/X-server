@@ -214,3 +214,19 @@ app.post('/createPost/', async (req, res) => {
     //     res.status(201).json({ result: 'username availble' });
     // }
 });
+
+
+
+
+
+
+
+
+
+
+
+app.get('/webhook', (req, res) => {
+    console.log("🚀 ~ file: app.js:218 ~ app.get ~ req, res:", req.query)
+    // res.status(200).send({ "status": "ok" });
+    res.status(200).send(req.query);
+});
