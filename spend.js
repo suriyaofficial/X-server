@@ -434,20 +434,14 @@ app.post("/delete/wander", async (req, res) => {
       const wanderer_name = wanderer.wanderer_name;
       const userDocSnap = await getDoc(userDocRef);
       const userResult = userDocSnap.data();
-
-      const activeIndex = userResult.activeWander.indexOf(wanderId);
-      const completeIndex = userResult.completedWander.indexOf(wanderId);
-      const inviteIndex = userResult.invite.indexOf(wanderId);
-
-      activeIndex ? userResult.activeWander.splice(activeIndex, 1) : null;
-      completeIndex
-        ? userResult.completedWander.splice(completeIndex, 1)
-        : null;
-      inviteIndex ? userResult.invite.splice(inviteIndex, 1) : null;
-
+      userResult.activeWander = userResult.activeWander.filter(
+        (activeWander) => activeWander.wander_uuid !== wanderId
+      );
+      userResult.invite = userResult.invite.filter(
+        (invite) => invite.wander_uuid !== wanderId
+      );
       await updateDoc(userDocRef, {
         activeWander: userResult.activeWander,
-        completedWander: userResult.completedWander,
         invite: userResult.invite,
       });
     });
