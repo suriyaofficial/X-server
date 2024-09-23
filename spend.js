@@ -90,7 +90,7 @@ app.post("/login", async (req, res) => {
       });
     }
   } catch (error) {
-    console.log(`🚀path:/login :error ${error}`);
+    console.error(`🚀path:/login :error ${error}`);
     res.status(500).json({ status: "Internal Server Error", message: error });
   }
 });
@@ -111,7 +111,7 @@ app.get("/wanderer", async (req, res) => {
       res.status(200).json();
     }
   } catch (error) {
-    console.log(`🚀path:/wanderer :error ${error}`);
+    console.error(`🚀path:/wanderer :error ${error}`);
     res.status(500).json({ status: "Internal Server Error", message: error });
   }
 });
@@ -183,7 +183,7 @@ app.post("/create/wander", async (req, res) => {
       });
     }
   } catch (error) {
-    console.log(`🚀path:/create/wander :error ${error}`);
+    console.error(`🚀path:/create/wander :error ${error}`);
     res.status(500).json({ status: "Internal Server Error", message: error });
   }
 });
@@ -205,7 +205,7 @@ const sendInvite = (inviteWanderer, wander_uuid, WanderName) => {
       await setDoc(userDocRef, updatedData);
     });
   } catch (error) {
-    console.log(`🚀function:send invite :error ${error}`);
+    console.error(`🚀function:send invite :error ${error}`);
     res.status(500).json({ status: "Internal Server Error", message: error });
   }
 };
@@ -222,7 +222,7 @@ app.get("/wander/inivitation", async (req, res) => {
       res.status(200).json();
     }
   } catch (error) {
-    console.log(`🚀GET:path:/wander/inivitation :error ${error}`);
+    console.error(`🚀GET:path:/wander/inivitation :error ${error}`);
     res.status(500).json({ status: "Internal Server Error", message: error });
   }
 });
@@ -277,7 +277,7 @@ app.put("/accept/wander/inivitation", async (req, res) => {
       res.status(400).json({ message: "already you have active wander" });
     }
   } catch (error) {
-    console.log(`🚀PUT:path:/wander/inivitation :error ${error}`);
+    console.error(`🚀PUT:path:/wander/inivitation :error ${error}`);
     res.status(500).json({ status: "Internal Server Error", message: error });
   }
 });
@@ -293,7 +293,7 @@ app.get("/active/wander", async (req, res) => {
       res.status(200).json();
     }
   } catch (error) {
-    console.log(`🚀GET:path:/active/wander :error ${error}`);
+    console.error(`🚀GET:path:/active/wander :error ${error}`);
     res.status(500).json({ status: "Internal Server Error", message: error });
   }
 });
@@ -309,7 +309,7 @@ app.get("/wander", async (req, res) => {
       res.status(200).json();
     }
   } catch (error) {
-    console.log(`🚀GET:path:/wander :error ${error}`);
+    console.error(`🚀GET:path:/wander :error ${error}`);
     res.status(500).json({ status: "Internal Server Error", message: error });
   }
 });
@@ -345,7 +345,7 @@ app.post("/add/expense", async (req, res) => {
       res.status(404).json({ message: "trip id is need" });
     }
   } catch (error) {
-    console.log(`🚀POST:path:/add/expense :error ${error}`);
+    console.error(`🚀POST:path:/add/expense :error ${error}`);
     res.status(500).json({ status: "Internal Server Error", message: error });
   }
 });
@@ -385,7 +385,7 @@ app.delete("/delete/expense", async (req, res) => {
     res.status(200).json({ message: "Expense Deleted Successfully" });
     return;
   } catch (error) {
-    console.log(`🚀DELETE:path:/delete/expense :error ${error}`);
+    console.error(`🚀DELETE:path:/delete/expense :error ${error}`);
     res.status(500).json({ status: "Internal Server Error", message: error });
   }
 });
@@ -418,7 +418,7 @@ app.post("/complete/wander", async (req, res) => {
     );
     res.status(200).json({ message: " Wander Completed Successfully" });
   } catch (error) {
-    console.log(`🚀POST:path:/complete/wander:error ${error}`);
+    console.error(`🚀POST:path:/complete/wander:error ${error}`);
     res.status(500).json({ status: "Internal Server Error", message: error });
   }
 });
@@ -444,7 +444,6 @@ app.post("/delete/wander", async (req, res) => {
         ? userResult.completedWander.splice(completeIndex, 1)
         : null;
       inviteIndex ? userResult.invite.splice(inviteIndex, 1) : null;
-      userResult.activeWander.splice(activeIndex, 1);
 
       await updateDoc(userDocRef, {
         activeWander: userResult.activeWander,
@@ -455,7 +454,7 @@ app.post("/delete/wander", async (req, res) => {
     console.log(`🚀-*-*-*  Wander Deleted Successfully  ${wanderId} -*-*-*🚀`);
     res.status(200).json({ message: "Wander Deleted Successfully" });
   } catch (error) {
-    console.log(`🚀POST:path:/delete/wander :error ${error}`);
+    console.error(`🚀POST:path:/delete/wander :error ${error}`);
     res.status(500).json({ status: "Internal Server Error", message: error });
   }
 });
@@ -475,7 +474,7 @@ app.get("/all/wander", async (req, res) => {
       res.status(200).json();
     }
   } catch (error) {
-    console.log(`🚀GET:path:/all/wander :error ${error}`);
+    console.error(`🚀GET:path:/all/wander :error ${error}`);
     res.status(500).json({ status: "Internal Server Error", message: error });
   }
 });
