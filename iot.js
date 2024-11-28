@@ -7,7 +7,7 @@ const { v4: uuidv4 } = require('uuid');
 const cors = require("cors");
 const { initializeApp } = require('firebase/app');
 const { getFirestore, doc, getDoc, setDoc, collection } = require('@firebase/firestore');
-const firebaseConfig = require('./firebaseconfig');
+const firebaseConfig = require('./firebaseconfig_iot');
 const http = require('http');
 const socketIo = require('socket.io');
 
