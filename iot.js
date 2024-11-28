@@ -154,51 +154,7 @@ app.post('/userNameCheck/', async (req, res) => {
         res.status(201).json({ result: 'username availble' });
     }
 });
-// app.put('/control/device/', authorization, async (req, res) => {
-//     const { id, status } = req.body;
-//     const docRef = doc(db, 'Users', req.username);
-//     const docSnap = await getDoc(docRef);
-//     const userData = docSnap.data();
-
-//     if (!userData) {
-//         return res.status(404).json({ result: "User not found" });
-//     }
-
-//     const deviceToUpdate = userData.device.find(device => device.deviceId === id);
-//     if (!deviceToUpdate) {
-//         return res.status(404).json({ result: "Device not found" });
-//     }
-
-//     // Update device status in database
-//     deviceToUpdate.status = status;
-//     await setDoc(docRef, userData);
-
-//     // Emit the message to the ESP
-//     io.emit('message', { deviceId: id, status });
-//     pendingFeedback.set(id, { status, retries: 0 }); // Track pending feedback
-
-//     // Retry mechanism
-//     const retryInterval = setInterval(async () => {
-//         if (pendingFeedback.has(id)) {
-//             const feedbackData = pendingFeedback.get(id);
-//             if (feedbackData.retries >= 5) { // Retry up to 5 times
-//                 console.log(`Failed to get feedback for device ${id}`);
-//                 pendingFeedback.delete(id);
-//                 clearInterval(retryInterval);
-//             } else {
-//                 feedbackData.retries++;
-//                 console.log(`Retrying command for device ${id}`);
-//                 io.emit('message', { deviceId: id, status });
-//             }
-//         } else {
-//             clearInterval(retryInterval);
-//         }
-//     }, 5000);
-
-//     res.status(200).json({ result: "Command sent, awaiting feedback" });
-// });
-
-app.put('/control/device/', async (req, res) => {
+app.put('/control/device/', authorization, async (req, res) => {
     const { id, status } = req.body;
     const docRef = doc(db, 'Users', req.username);
     const docSnap = await getDoc(docRef);
@@ -213,11 +169,11 @@ app.put('/control/device/', async (req, res) => {
         return res.status(404).json({ result: "Device not found" });
     }
 
-    // Update device status in the database
+    // Update device status in database
     deviceToUpdate.status = status;
     await setDoc(docRef, userData);
 
-    // Broadcast message to all WebSocket clients
+    // Emit the message to the ESP
     const message = JSON.stringify({ deviceId: id, status });
     wss.clients.forEach(client => {
         if (client.readyState === WebSocket.OPEN) {
@@ -225,13 +181,13 @@ app.put('/control/device/', async (req, res) => {
         }
     });
 
-    pendingFeedback.set(id, { status, retries: 0 });
+    pendingFeedback.set(id, { status, retries: 0 }); // Track pending feedback
 
     // Retry mechanism
-    const retryInterval = setInterval(() => {
+    const retryInterval = setInterval(async () => {
         if (pendingFeedback.has(id)) {
             const feedbackData = pendingFeedback.get(id);
-            if (feedbackData.retries >= 5) {
+            if (feedbackData.retries >= 5) { // Retry up to 5 times
                 console.log(`Failed to get feedback for device ${id}`);
                 pendingFeedback.delete(id);
                 clearInterval(retryInterval);
@@ -251,6 +207,60 @@ app.put('/control/device/', async (req, res) => {
 
     res.status(200).json({ result: "Command sent, awaiting feedback" });
 });
+
+// app.put('/control/device/', async (req, res) => {
+//     const { id, status } = req.body;
+//     const docRef = doc(db, 'Users', req.username);
+//     const docSnap = await getDoc(docRef);
+//     const userData = docSnap.data();
+
+//     if (!userData) {
+//         return res.status(404).json({ result: "User not found" });
+//     }
+
+//     const deviceToUpdate = userData.device.find(device => device.deviceId === id);
+//     if (!deviceToUpdate) {
+//         return res.status(404).json({ result: "Device not found" });
+//     }
+
+//     // Update device status in the database
+//     deviceToUpdate.status = status;
+//     await setDoc(docRef, userData);
+
+//     // Broadcast message to all WebSocket clients
+//     const message = JSON.stringify({ deviceId: id, status });
+//     wss.clients.forEach(client => {
+//         if (client.readyState === WebSocket.OPEN) {
+//             client.send(message);
+//         }
+//     });
+
+//     pendingFeedback.set(id, { status, retries: 0 });
+
+//     // Retry mechanism
+//     const retryInterval = setInterval(() => {
+//         if (pendingFeedback.has(id)) {
+//             const feedbackData = pendingFeedback.get(id);
+//             if (feedbackData.retries >= 5) {
+//                 console.log(`Failed to get feedback for device ${id}`);
+//                 pendingFeedback.delete(id);
+//                 clearInterval(retryInterval);
+//             } else {
+//                 feedbackData.retries++;
+//                 console.log(`Retrying command for device ${id}`);
+//                 wss.clients.forEach(client => {
+//                     if (client.readyState === WebSocket.OPEN) {
+//                         client.send(message);
+//                     }
+//                 });
+//             }
+//         } else {
+//             clearInterval(retryInterval);
+//         }
+//     }, 5000);
+
+//     res.status(200).json({ result: "Command sent, awaiting feedback" });
+// });
 app.post('/login/', async (req, res) => {
     const { username, password } = req.body;
     const docRef = doc(db, 'Users', username);
