@@ -1,4 +1,5 @@
 const express = require('express');
+const WebSocket = require('ws'); 
 const bodyParser = require('body-parser');
 const path = require('path')
 const bcrypt = require('bcrypt');
@@ -20,29 +21,62 @@ const db = getFirestore(firebaseApp);
 app.use(bodyParser.json());
 
 const server = http.createServer(app);
-const io = socketIo(server, {
-    cors: {
-        origin: "*", // Specify the allowed origin for Socket.io
-        // methods: ["GET", "POST"]
-    }
-});
+// const io = socketIo(server, {
+//     cors: {
+//         origin: "*", // Specify the allowed origin for Socket.io
+//         // methods: ["GET", "POST"]
+//     }
+// });
 
-const pendingFeedback = new Map(); // Tracks pending feedback
+// const pendingFeedback = new Map(); // Tracks pending feedback
 
-io.on('connection', (socket) => {
-    console.log('A user connected:', socket.id);
+// io.on('connection', (socket) => {
+//     console.log('A user connected:', socket.id);
 
-    // Handle feedback messages
-    socket.on('feedback', (data) => {
-        const { deviceId, status } = data;
-        console.log(`Feedback received for device ${deviceId}: ${status}`);
+//     // Handle feedback messages
+//     socket.on('feedback', (data) => {
+//         const { deviceId, status } = data;
+//         console.log(`Feedback received for device ${deviceId}: ${status}`);
         
-        // Remove pending feedback for this device
-        pendingFeedback.delete(deviceId);
+//         // Remove pending feedback for this device
+//         pendingFeedback.delete(deviceId);
+//     });
+
+//     socket.on('disconnect', () => {
+//         console.log('User disconnected');
+//     });
+// });
+
+// server.listen(port, () => {
+//     console.log(`🚀 Server is running on http://localhost:${port}`);
+// });
+const wss = new WebSocket.Server({ server });
+
+// Pending feedback tracker
+const pendingFeedback = new Map();
+
+wss.on('connection', (ws) => {
+    console.log('A client connected.');
+
+    // Handle incoming messages
+    ws.on('message', (message) => {
+        try {
+            const data = JSON.parse(message);
+            if (data.type === 'feedback') {
+                const { deviceId, status } = data;
+                console.log(`Feedback received for device ${deviceId}: ${status}`);
+
+                // Remove pending feedback for this device
+                pendingFeedback.delete(deviceId);
+            }
+        } catch (err) {
+            console.error('Error processing WebSocket message:', err.message);
+        }
     });
 
-    socket.on('disconnect', () => {
-        console.log('User disconnected');
+    // Handle disconnection
+    ws.on('close', () => {
+        console.log('A client disconnected.');
     });
 });
 
@@ -155,6 +189,60 @@ app.put('/control/device/', authorization, async (req, res) => {
                 feedbackData.retries++;
                 console.log(`Retrying command for device ${id}`);
                 io.emit('message', { deviceId: id, status });
+            }
+        } else {
+            clearInterval(retryInterval);
+        }
+    }, 5000);
+
+    res.status(200).json({ result: "Command sent, awaiting feedback" });
+});
+
+app.put('/control/device/', async (req, res) => {
+    const { id, status } = req.body;
+    const docRef = doc(db, 'Users', req.username);
+    const docSnap = await getDoc(docRef);
+    const userData = docSnap.data();
+
+    if (!userData) {
+        return res.status(404).json({ result: "User not found" });
+    }
+
+    const deviceToUpdate = userData.device.find(device => device.deviceId === id);
+    if (!deviceToUpdate) {
+        return res.status(404).json({ result: "Device not found" });
+    }
+
+    // Update device status in the database
+    deviceToUpdate.status = status;
+    await setDoc(docRef, userData);
+
+    // Broadcast message to all WebSocket clients
+    const message = JSON.stringify({ deviceId: id, status });
+    wss.clients.forEach(client => {
+        if (client.readyState === WebSocket.OPEN) {
+            client.send(message);
+        }
+    });
+
+    pendingFeedback.set(id, { status, retries: 0 });
+
+    // Retry mechanism
+    const retryInterval = setInterval(() => {
+        if (pendingFeedback.has(id)) {
+            const feedbackData = pendingFeedback.get(id);
+            if (feedbackData.retries >= 5) {
+                console.log(`Failed to get feedback for device ${id}`);
+                pendingFeedback.delete(id);
+                clearInterval(retryInterval);
+            } else {
+                feedbackData.retries++;
+                console.log(`Retrying command for device ${id}`);
+                wss.clients.forEach(client => {
+                    if (client.readyState === WebSocket.OPEN) {
+                        client.send(message);
+                    }
+                });
             }
         } else {
             clearInterval(retryInterval);
