@@ -30,6 +30,9 @@ wss.on('headers', async (headers, req) => {
 });
 
 wss.on('connection', async (ws, req) => {
+    console.log('req',req);
+    console.log('req',req.authorization);
+    console.log('req',req.headers);
     // Extract headers from the request
     const zapId = req.headers['zapID']; // Assuming 'zapId' is the header name
     const apiKey = req.headers['apiKey'];     // Assuming 'apikey' is the header name
