@@ -71,7 +71,9 @@ wss.on('connection', async (ws, req) => {
         try {
             const data = JSON.parse(message);
             if (data.type === 'feedback') {
+                const { deviceId, status } = data;
                 console.log(`Feedback received: ${JSON.stringify(data)}`);
+                pendingFeedback.delete(deviceId);
             } else {
                 console.log(`Message received: ${JSON.stringify(data)}`);
             }
