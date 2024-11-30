@@ -21,6 +21,7 @@ const db = getFirestore(firebaseApp);
 app.use(bodyParser.json());
 
 const server = http.createServer(app);
+//code
 // const io = socketIo(server, {
 //     cors: {
 //         origin: "*", // Specify the allowed origin for Socket.io
