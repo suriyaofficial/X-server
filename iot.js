@@ -30,13 +30,13 @@ wss.on('headers', async (headers, req) => {
 });
 
 wss.on('connection', async (ws, req) => {
-    console.log('req',req);
-    console.log('req',req.authorization);
-    console.log('req',req.headers);
+    console.log('req-header',req.headers);
     // Extract headers from the request
-    const zapId = req.headers['zapID']; // Assuming 'zapId' is the header name
-    const apiKey = req.headers['apiKey'];     // Assuming 'apikey' is the header name
-
+    const zapId = req.headers['zapid']; // Assuming 'zapId' is the header name
+    console.log('zapId',zapId);
+    const apiKey = req.headers['apikey'];     // Assuming 'apikey' is the header name
+    console.log('apiKey',apiKey);
+    
     if (!zapId || !apiKey) {
         console.log('Connection failed: Missing zapId or apiKey.');
         ws.send(JSON.stringify({ type: 'error', message: 'Unauthorized: Missing zapId or apiKey.' }));
@@ -86,6 +86,7 @@ wss.on('connection', async (ws, req) => {
         console.log(`Device ${zapId} disconnected.`);
     });
 });
+    
 
 
 
