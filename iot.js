@@ -142,6 +142,42 @@ app.post('/add/device/', authorization, async (req, res) => {
         res.status(201).json({ result: "created" });
     }
 });
+app.post('/add/zap/', authorization, async (req, res) => {
+    const zap = req.body.zap;
+    const zapId="zap_8_1711"
+    const message = JSON.stringify({type:"zapdeviceupdate", zap:zap,zapId:zapId});
+    wss.clients.forEach(client => {
+        if (client.readyState === WebSocket.OPEN) {
+            client.send(message);
+        }
+    });
+    pendingFeedback.set(zapId, {  retries: 0 }); // Track pending feedback
+
+    // Retry mechanism
+    const retryInterval = setInterval(async () => {
+        if (pendingFeedback.has(zapId)) {
+            const feedbackData = pendingFeedback.get(zapId);
+            if (feedbackData.retries >= 5) { // Retry up to 5 times
+                console.log(`Failed to get feedback for Zap add ${zapId}`);
+                pendingFeedback.delete(zapId);
+                clearInterval(retryInterval);
+            } else {
+                feedbackData.retries++;
+                console.log(`Retrying command for Zap add ${zapId}`);
+                wss.clients.forEach(client => {
+                    if (client.readyState === WebSocket.OPEN) {
+                        client.send(message);
+                    }
+                });
+            }
+        } else {
+            clearInterval(retryInterval);
+        }
+    }, 5000);
+
+    res.status(200).json({ result: "Command sent, awaiting Zap add" });
+    
+});
 app.get('/getStatus/', authorization, async (req, res) => {
     const docRef = doc(db, 'Users', req.username);
     const docSnap = await getDoc(docRef);
@@ -181,7 +217,7 @@ app.put('/control/device/', authorization, async (req, res) => {
     await setDoc(docRef, userData);
 
     // Emit the message to the ESP
-    const message = JSON.stringify({ zapId:"zap_8_1711",deviceId: id, status });
+    const message = JSON.stringify({type:"command", zapId:"zap_8_1711",deviceId: id, status });
     wss.clients.forEach(client => {
         if (client.readyState === WebSocket.OPEN) {
             client.send(message);
