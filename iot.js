@@ -29,43 +29,41 @@ wss.on('headers', async (headers, req) => {
     // console.log("Connection initiated with headers:", headers);
 });
 
+
 wss.on('connection', async (ws, req) => {
-    console.log("🚀 ~ file: iot.js:33 ~ wss.on ~ r:", req)
-    console.log('req-header',req.headers);
     // Extract headers from the request
-    const zapId = req.headers['zapid']; // Assuming 'zapId' is the header name
-    console.log('zapId',zapId);
-    const apiKey = req.headers['apikey'];     // Assuming 'apikey' is the header name
-    console.log('apiKey',apiKey);
+    const authorization = req.headers['authorization']?.split(" ");     // Assuming 'apikey' is the header name
+    if ( !authorization) {
+        console.log('Connection failed: Missing  authorization.');
+        ws.send(JSON.stringify({ type: 'error', message: 'Unauthorized: Missing  authorization.' }));
+        ws.close();
+        return;
+    }
+    if ( authorization[0]!="Basic") {
+        console.log('Connection failed: Invalid Authorization Header');
+        ws.send(JSON.stringify({ type: 'error', message: 'Unauthorized: Invalid Authorization Header' }));
+        ws.close();
+        return;
+    }
+
+    if ( !authorization[1]) {
+        console.log('Connection failed: missing Authorization Key ');
+        ws.send(JSON.stringify({ type: 'error', message: 'Unauthorized: missing Authorization key' }));
+        ws.close();
+        return;
+    }
+    const decodedString = Buffer.from(authorization[1], 'base64').toString('utf-8').split(":");
     
-    if (!zapId || !apiKey) {
-        console.log('Connection failed: Missing zapId or apiKey.');
-        ws.send(JSON.stringify({ type: 'error', message: 'Unauthorized: Missing zapId or apiKey.' }));
+    const docRef = doc(db, 'Users', decodedString[0]);
+    const docSnap = await getDoc(docRef);
+    const existingUser = docSnap.data();
+    if ( decodedString[1]!=existingUser.apikey) {
+        console.log('Connection failed: Invalid Authorization Key ');
+        ws.send(JSON.stringify({ type: 'error', message: 'Unauthorized: Invalid Authorization key' }));
         ws.close();
         return;
     }
-    if(apiKey!="ak12al12aksl1"){
-        console.log('Connection failed: wrong  apiKey.');
-        ws.send(JSON.stringify({ type: 'error', message: 'Unauthorized: wrong  apiKey.' }));
-        ws.close();
-        return;
-    }
-
-    console.log(`Received connection request: zapId=${zapId}, apiKey=${apiKey}`);
-
-    // // Validate zapId and apiKey against Firebase Firestore
-    // const docRef = doc(db, 'Devices', zapId);
-    // const docSnap = await getDoc(docRef);
-
-    // if (!docSnap.exists() || docSnap.data().apiKey !== apiKey) {
-    //     console.log('Connection failed: Invalid zapId or apiKey.');
-    //     ws.send(JSON.stringify({ type: 'error', message: 'Unauthorized: Invalid zapId or apiKey.' }));
-    //     ws.close();
-    //     return;
-    // }
-
-    // console.log(`Device ${zapId} authenticated successfully.`);
-    // ws.send(JSON.stringify({ type: 'verified', message: 'Connection verified' }));
+    console.log(`Received connection request from ${decodedString[0]}`);
 
     // Handle incoming messages
     ws.on('message', (message) => {
@@ -86,7 +84,7 @@ wss.on('connection', async (ws, req) => {
 
     // Handle disconnection
     ws.on('close', () => {
-        console.log(`Device ${zapId} disconnected.`);
+        console.log(`Device  disconnected. ${decodedString[0]}`);
     });
 });
     
@@ -143,42 +141,7 @@ app.post('/add/device/', authorization, async (req, res) => {
         res.status(201).json({ result: "created" });
     }
 });
-app.post('/add/zap/', authorization, async (req, res) => {
-    const zap = req.body.zap;
-    const zapId="zap_8_1711"
-    const message = JSON.stringify({type:"zapdeviceupdate", zap:zap,zapId:zapId});
-    wss.clients.forEach(client => {
-        if (client.readyState === WebSocket.OPEN) {
-            client.send(message);
-        }
-    });
-    pendingFeedback.set(zapId, {  retries: 0 }); // Track pending feedback
 
-    // Retry mechanism
-    const retryInterval = setInterval(async () => {
-        if (pendingFeedback.has(zapId)) {
-            const feedbackData = pendingFeedback.get(zapId);
-            if (feedbackData.retries >= 5) { // Retry up to 5 times
-                console.log(`Failed to get feedback for Zap add ${zapId}`);
-                pendingFeedback.delete(zapId);
-                clearInterval(retryInterval);
-            } else {
-                feedbackData.retries++;
-                console.log(`Retrying command for Zap add ${zapId}`);
-                wss.clients.forEach(client => {
-                    if (client.readyState === WebSocket.OPEN) {
-                        client.send(message);
-                    }
-                });
-            }
-        } else {
-            clearInterval(retryInterval);
-        }
-    }, 5000);
-
-    res.status(200).json({ result: "Command sent, awaiting Zap add" });
-    
-});
 app.get('/getStatus/', authorization, async (req, res) => {
     const docRef = doc(db, 'Users', req.username);
     const docSnap = await getDoc(docRef);
@@ -218,7 +181,7 @@ app.put('/control/device/', authorization, async (req, res) => {
     await setDoc(docRef, userData);
 
     // Emit the message to the ESP
-    const message = JSON.stringify({type:"command", zapId:"zap_8_1711",deviceId: id, status });
+    const message = JSON.stringify({type:"command", deviceId: id, status });
     wss.clients.forEach(client => {
         if (client.readyState === WebSocket.OPEN) {
             client.send(message);
