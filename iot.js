@@ -26,11 +26,12 @@ const wss = new WebSocket.Server({ server });
 const pendingFeedback = new Map();
 
 wss.on('headers', async (headers, req) => {
-    console.log("Connection initiated with headers:", headers);
+    // console.log("Connection initiated with headers:", headers);
 });
 
 wss.on('connection', async (ws, req) => {
-    // console.log('req-header',req.headers);
+    console.log("🚀 ~ file: iot.js:33 ~ wss.on ~ r:", req)
+    console.log('req-header',req.headers);
     // Extract headers from the request
     const zapId = req.headers['zapid']; // Assuming 'zapId' is the header name
     console.log('zapId',zapId);
