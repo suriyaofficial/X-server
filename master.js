@@ -14,7 +14,7 @@ const {
   updateDoc,
   deleteDoc,
 } = require("@firebase/firestore");
-const firebaseConfig = require("./spend_firebaseconfig");
+const firebaseConfig = require("./master_firebaseconfig");
 const http = require("http");
 const socketIo = require("socket.io");
 const app = express();
@@ -49,48 +49,44 @@ app.get("/", function (req, res) {
   res.sendFile(fileName, option);
 });
 
-app.post("/login", async (req, res) => {
+app.post("/feedback/login", async (req, res) => {
   try {
-    const { wandererId, wanderer, wandererPhoto } = req.body;
+    const { email, name, photoUrl } = req.body;
     console.log("req.body",req.body);
     
-    const wandererDocRef = doc(db, "wanderer_list", wandererId);
-    const wandererDocSnap = await getDoc(wandererDocRef);
-    const existingWanderer = wandererDocSnap.data();
-    // if (existingWanderer) {
-    //   console.log(`🚀-*-*-* ${wandererId} logged_In -*-*-*🚀`);
-    //   res.status(200).json({ message: "logged_In", data: existingWanderer });
-    // } else {
-    //   const usersCollectionRef = collection(db, "admin_list");
-    //   const userDocRef = doc(usersCollectionRef, wandererId);
-    //   await setDoc(userDocRef, {
-    //     wandererId,
-    //     wanderer,
-    //     wandererPhoto,
-    //     activeWander: [],
-    //     completedWander: [],
-    //     invite: [],
-    //     plan: "Basic",
-    //     paymentMethod: ["Cash", "Card", "UPI"],
-    //   });
+    const DocRef = doc(db, "admin_list", email);
+    const DocSnap = await getDoc(DocRef);
+    const existing = DocSnap.data();
+    if (existing) {
+      console.log(`🚀-*-*-* ${email} logged_In -*-*-*🚀`);
+      res.status(200).json({ message: "logged_In", data: existing });
+    } else {
+      const usersCollectionRef = collection(db, "admin_list");
+      console.log("🚀 ~ usersCollectionRef:", usersCollectionRef)
+      const userDocRef = doc(usersCollectionRef, email);
+      console.log("🚀 ~ userDocRef:", userDocRef)
+      await setDoc(userDocRef, {
+        email,
+        name,
+        photoUrl,
+        business: [],
+        plan: "Basic",
+      });
 
-    //   console.log(
-    //     `🚀-*-*-* ${wandererId} User Registered Successfully -*-*-*🚀`
-    //   );
-    //   res.status(201).json({
-    //     result: "user registered Successfully",
-    //     data: {
-    //       wandererId,
-    //       wanderer,
-    //       wandererPhoto,
-    //       activeWander: [],
-    //       completedWander: [],
-    //       invite: [],
-    //       plan: "Basic",
-    //       paymentMethod: ["Cash", "Card", "UPI"],
-    //     },
-    //   });
-    // }
+      console.log(
+        `🚀-*-*-* ${email} User Registered Successfully -*-*-*🚀`
+      );
+      res.status(201).json({
+        result: "user registered Successfully",
+        data: {
+          email,
+          name,
+          photoUrl,
+          business: [],
+          plan: "Basic",
+        },
+      });
+    }
   } catch (error) {
     console.error(`🚀path:/login :error ${error}`);
     res.status(500).json({ status: "Internal Server Error", message: error });
