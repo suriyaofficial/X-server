@@ -48,34 +48,61 @@ app.get("/", function (req, res) {
   console.log("🚀-*-*-*server refresh -*-*-*🚀");
   res.sendFile(fileName, option);
 });
+const getData = async (db, collectionName, docId) => {
+  const DocRef = doc(db, collectionName, docId);
+  const DocSnap = await getDoc(DocRef);
+  return (existing = DocSnap.data());
+};
+const setData = async (db, collectionName, docId, updatedData) => {
+  const DocRef = doc(db, collectionName, docId);
+  await setDoc(DocRef, updatedData);
+};
+const checkPlan = async (req, res, next) => {
+  const plans = await getData(db, "plans", "plan_limits");
+  try {
+    const email = req.query.email;
+    const existing = await getData(db, "admin_list", email);
+    if (existing.business.length < plans[existing.plan]) {
+      next();
+    } else if (existing.plan === "Pro") {
+      const plan = await getData(db, "pro_plan", email);
+      if (existing.business.length < plan.limit) {
+        next();
+      } else if (existing.business.length == plan.limit) {
+        throw new Error(
+          `you have reached the maximum number of business for your ${existing.plan}plan.`
+        );
+      }
+    } else if (existing.business.length == plans[existing.plan]) {
+      throw new Error(
+        `you have reached the maximum number of business for your ${existing.plan}plan.`
+      );
+    }
+  } catch (error) {
+    res.status(401).json({
+      error: `you have reached the maximum number of business for yourplan.`,
+    });
+  }
+};
 
 app.post("/feedback/login", async (req, res) => {
   try {
     const { email, name, photoUrl } = req.body;
-    console.log("req.body",req.body);
-    
-    const DocRef = doc(db, "admin_list", email);
-    const DocSnap = await getDoc(DocRef);
-    const existing = DocSnap.data();
+    const existing = await getData(db, "admin_list", email);
     if (existing) {
       console.log(`🚀-*-*-* ${email} logged_In -*-*-*🚀`);
       res.status(200).json({ message: "logged_In", data: existing });
     } else {
       const usersCollectionRef = collection(db, "admin_list");
-      console.log("🚀 ~ usersCollectionRef:", usersCollectionRef)
       const userDocRef = doc(usersCollectionRef, email);
-      console.log("🚀 ~ userDocRef:", userDocRef)
       await setDoc(userDocRef, {
         email,
         name,
         photoUrl,
         business: [],
-        plan: "Basic",
+        plan: "Solo",
       });
 
-      console.log(
-        `🚀-*-*-* ${email} User Registered Successfully -*-*-*🚀`
-      );
       res.status(201).json({
         result: "user registered Successfully",
         data: {
@@ -83,7 +110,7 @@ app.post("/feedback/login", async (req, res) => {
           name,
           photoUrl,
           business: [],
-          plan: "Basic",
+          plan: "Solo",
         },
       });
     }
@@ -93,96 +120,89 @@ app.post("/feedback/login", async (req, res) => {
   }
 });
 
-app.get("/wanderer", async (req, res) => {
+app.get("/feedback/business", async (req, res) => {
   try {
-    const { wandererId } = req.query;
-    const wandererDocRef = doc(db, "wanderer_list", wandererId);
-    const wandererDocSnap = await getDoc(wandererDocRef);
-    const existingWanderer = wandererDocSnap.data();
-    if (existingWanderer) {
-      res.status(200).json({
-        wanderer: existingWanderer.wanderer,
-        wandererId,
-        wandererPhoto: existingWanderer.wandererPhoto,
-      });
+    const { email } = req.query;
+    const existing = await getData(db, "admin_list", email);
+    if (existing) {
+      res.status(200).json(existing.business);
     } else {
-      res.status(200).json();
+      res.status(200).json({ info: "No business found" });
     }
   } catch (error) {
     console.error(`🚀path:/wanderer :error ${error}`);
     res.status(500).json({ status: "Internal Server Error", message: error });
   }
 });
-app.post("/create/wander", async (req, res) => {
+app.post("/feedback/business", checkPlan, async (req, res) => {
   try {
     const {
-      wanderType,
-      WanderName,
-      WanderDestination,
-      WanderBudget,
-      inviteWanderer,
-      wandererList,
+      businessName,
+      tagLine,
+      sliderDesign,
+      placeId,
+      emailNotifier,
+      warningRatingThreshold,
     } = req.body;
-    const wanderer_id = req.query.wanderer_id;
+    const email = req.query.email;
     const uuid = await uuidv4();
-    const shortUuid = uuid.slice(0, 23);
-    const wander_uuid =
-      wanderType === "GroupWander"
-        ? `GroupWander_${shortUuid}`
-        : `SoloWander${shortUuid}`;
-    if (wanderer_id) {
-      const wandererDocRef = doc(db, "wanderer_list", wanderer_id);
-      const wandererDocSnap = await getDoc(wandererDocRef);
-      const existingWanderer = wandererDocSnap.data();
-      let data = existingWanderer.activeWander;
-      if (data.length === 0) {
-        if (wanderType === "GroupWander") {
-          const tripCollectionRef = collection(db, "wander_list");
-          const tripDocRef = doc(tripCollectionRef, wander_uuid);
-          await setDoc(tripDocRef, {
-            wander_uuid,
-            WanderName,
-            wanderType,
-            WanderDestination,
-            WanderBudget,
-            inviteWanderer,
-            WanderAdmin: wanderer_id,
-            WanderUtilized: 0,
-            wandererList,
-            expenses: [],
-          });
-          const updatedData = {
-            ...existingWanderer,
-            activeWander: [
-              ...existingWanderer.activeWander,
-              { wander_uuid, WanderName },
-            ],
-          };
-          await setDoc(wandererDocRef, updatedData);
-          await sendInvite(inviteWanderer, wander_uuid, WanderName);
-          console.log(
-            `🚀-*-*-* ${wander_uuid} Wander Created Successfully -*-*-*🚀`
-          );
+    const business_uuid = uuid.slice(0, 23);
+    const existing = await getData(db, "admin_list", email);
+    const urlEncode = Buffer.from(
+      JSON.stringify({
+        businessId: business_uuid,
+        businessName: businessName,
+        placeId: placeId,
+      })
+    ).toString("base64");
+    const data = {
+      businessId: business_uuid,
+      businessName: businessName,
+      tagLine: tagLine,
+      sliderDesign: sliderDesign,
+      placeId: placeId,
+      emailNotifier: emailNotifier ? emailNotifier : email,
+      warningRatingThreshold: warningRatingThreshold,
+      url: `www.feedback.web.app/${urlEncode}`,
+    };
+    const updatedData = {
+      ...existing,
+      business: [...existing.business, data],
+    };
+    console.log("🚀 ~ updatedData:", updatedData);
+    await setData(db, "admin_list", email, updatedData);
 
-          res.status(201).json({ message: "Wander Created Successfully" });
-        } else {
-          res.status(501).json({ message: "developing on going " });
-        }
-      } else {
-        res.status(403).json({
-          error: "Forbidden",
-          message: `Upgrade your plan to add more trip.`,
-        });
-      }
-    } else {
-      res.status(400).json({
-        error: "Bad Request",
-        message: "Missing required query parameter: 'userId'",
-      });
-    }
+    res.status(200).json({
+      message: `added successfully`,
+      url: `www.feedback.web.app/${urlEncode}`,
+    });
   } catch (error) {
-    console.error(`🚀path:/create/wander :error ${error}`);
+    console.error(`error ${error}`);
     res.status(500).json({ status: "Internal Server Error", message: error });
+  }
+});
+app.delete("/feedback/business/:businessId", async (req, res) => {
+  try {
+    const email = req.query.email;
+    const { businessId } = req.params;
+    const existing = await getData(db, "admin_list", email);
+    const updatedList = existing.business.filter(
+      (b) => b.businessId !== businessId
+    );
+    const updatedData = { ...existing, business: updatedList };
+    await setData(db, "admin_list", email, updatedData);
+
+    return res.status(200).json({
+      message: "deleted successfully",
+      deletedId: businessId,
+      remaining: updatedList.length,
+    });
+  } catch (error) {
+    console.error(`🚀 path:/feedback/business DELETE :error`, error);
+    return res.status(500).json({
+      status: "Internal Server Error",
+      message: error?.message || error,
+    });
   }
 });
 
