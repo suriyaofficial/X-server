@@ -13,10 +13,19 @@ const {
   getDocs,
   updateDoc,
   deleteDoc,
+  query,
+  where,
+  orderBy,
+  limit: fbLimit,
+  startAfter,
+  getDocs: getDocsExtra,
+  Timestamp,
+  serverTimestamp,
 } = require("@firebase/firestore");
 const firebaseConfig = require("./master_firebaseconfig");
 const http = require("http");
 const socketIo = require("socket.io");
+const { timeStamp } = require("console");
 const app = express();
 app.use(cors()); // Enable CORS for all routes
 const port = 3100;
@@ -48,8 +57,11 @@ app.get("/", function (req, res) {
   console.log("🚀-*-*-*server refresh -*-*-*🚀");
   res.sendFile(fileName, option);
 });
+
 const getData = async (db, collectionName, docId) => {
-  const DocRef = doc(db, collectionName, docId);
+  const DocRef = docId
+    ? doc(db, collectionName, docId)
+    : collection(db, collectionName);
   const DocSnap = await getDoc(DocRef);
   return (existing = DocSnap.data());
 };
@@ -126,6 +138,37 @@ app.get("/feedback/admin/all/business", async (req, res) => {
     const existing = await getData(db, "admin_list", email);
     if (existing) {
       res.status(200).json(existing.business);
+    } else {
+      res.status(200).json({ info: "No business found" });
+    }
+  } catch (error) {
+    console.error(`🚀path:/wanderer :error ${error}`);
+    res.status(500).json({ status: "Internal Server Error", message: error });
+  }
+});
+app.post("/feedback/:businessId", async (req, res) => {
+  try {
+    const { businessId } = req.params;
+    const feedbackData = ({
+      email,
+      phoneNo,
+      activityType,
+      sliderDesignoverAllExperience,
+      comments,
+      intrestedInOWC,
+      knownSwimming,
+    } = req.body);
+    // const  feedbackData ={"email": "scubadiver.suriya@gmail.com", "phoneNo": "7092925555", "Activity Type": "dsd", "overAllExperience": 4, "comments": "thanks", "intrestedInOWC": true, "knownSwimming": true}
+    const feedbackRef = doc(
+      collection(db, "business", businessId, "feedbacks")
+    ); // auto id
+    await setDoc(feedbackRef, {
+      ...feedbackData,
+      timestamp: serverTimestamp(),
+    });
+    // return feedbackRef.id;
+    if (feedbackRef.id) {
+      res.status(200).json(feedbackRef.id);
     } else {
       res.status(200).json({ info: "No business found" });
     }
@@ -235,290 +278,322 @@ app.get("/feedback/business/:businessId", async (req, res) => {
   }
 });
 
-const sendInvite = (inviteWanderer, wander_uuid, WanderName) => {
+app.get("/feedback/admin/feedbacks/:businessId", async (req, res) => {
   try {
-    inviteWanderer.forEach(async (invite) => {
-      const userDocRef = doc(db, "wanderer_list", invite.wanderer_id);
-      const wanderer_name = invite.wanderer_name;
-      const userDocSnap = await getDoc(userDocRef);
-      const userResult = userDocSnap.data();
-      const updatedData = {
-        ...userResult,
-        invite: [
-          ...userResult.invite,
-          { WanderName, wanderer_name, wander_uuid, status: "pending" },
-        ],
-      };
-      await setDoc(userDocRef, updatedData);
-    });
-  } catch (error) {
-    console.error(`🚀function:send invite :error ${error}`);
-    res.status(500).json({ status: "Internal Server Error", message: error });
-  }
-};
+    const { businessId } = req.params;
+    const {
+      pageSize = 100,
+      sortBy = "timestamp",
+      sortOrder = "desc",
+      activityType,
+      intrestedInOWC,
+      knownSwimming,
+      overAllExperienceMin,
+      overAllExperienceMax,
+      startTime,
+      endTime,
+      cursor,
+      lastTimestamp, // optional helper for tie-break when sorting by overAllExperience
+    } = req.query;
 
-app.get("/wander/inivitation", async (req, res) => {
-  try {
-    const { wandererId } = req.query;
-    const wandererDocRef = doc(db, "wanderer_list", wandererId);
-    const wandererDocSnap = await getDoc(wandererDocRef);
-    const existingWanderer = wandererDocSnap.data();
-    if (existingWanderer) {
-      res.status(200).json({ invite: existingWanderer.invite });
-    } else {
-      res.status(200).json();
+    // Validate pageSize
+    const limitNumber = Math.min(
+      Math.max(parseInt(pageSize, 10) || 20, 1),
+      100
+    );
+
+    // Build collection ref
+    const feedbacksCol = collection(db, "business", businessId, "feedbacks");
+
+    // Start building where clauses
+    const constraints = [];
+
+    // equality filters
+    if (activityType) {
+      constraints.push(where("activityType", "==", activityType));
     }
-  } catch (error) {
-    console.error(`🚀GET:path:/wander/inivitation :error ${error}`);
-    res.status(500).json({ status: "Internal Server Error", message: error });
-  }
-});
-app.put("/accept/wander/inivitation", async (req, res) => {
-  try {
-    const { wanderer_id } = req.query;
-    const { wander_uuid, status } = req.body;
-    const wandererDocRef = doc(db, "wanderer_list", wanderer_id);
-    const wandererDocSnap = await getDoc(wandererDocRef);
-    const wanderDocRef = doc(db, "wander_list", wander_uuid);
-    const wanderDocSnap = await getDoc(wanderDocRef);
-    const existingWanderer = wandererDocSnap.data();
-    const existingWander = wanderDocSnap.data();
-    if (existingWanderer.activeWander.length === 0) {
-      if (status === "accept") {
-        const updatedActiveWander = [
-          ...existingWanderer.activeWander,
-          { wander_uuid, WanderName: existingWander.WanderName },
-        ];
-        // Remove the corresponding invite from the `invite` array in `existingWanderer`
-        const updatedInvite = existingWanderer.invite.filter(
-          (invite) => invite.wander_uuid !== existingWander.wander_uuid
-        );
-        // Update the status of the wanderer in `existingWander.inviteWanderer`
-        const updatedInviteWanderer = existingWander.inviteWanderer.map(
-          (wanderer) =>
-            wanderer.wanderer_id === existingWanderer.wandererId
-              ? { ...wanderer, status: "accept" }
-              : wanderer
-        );
-        const updatedData = {
-          ...existingWanderer,
-          activeWander: updatedActiveWander,
-          invite: updatedInvite,
-        };
-        // Update the `existingWander` object with the updated `inviteWanderer`
-        const updatedWanderData = {
-          ...existingWander,
-          inviteWanderer: updatedInviteWanderer,
-        };
 
-        // Save the updated data back to Firestore
-        await setDoc(wandererDocRef, updatedData);
-        await setDoc(wanderDocRef, updatedWanderData);
-        console.log(
-          `🚀-*-*-* ${wanderer_id} Accepted the Wander Invite -*-*-*🚀`
-        );
+    if (typeof intrestedInOWC !== "undefined") {
+      const boolVal = String(intrestedInOWC).toLowerCase() === "true";
+      constraints.push(where("intrestedInOWC", "==", boolVal));
+    }
 
-        res.status(200).json({ message: " Accepted the Wander Invite " });
+    if (typeof knownSwimming !== "undefined") {
+      const boolVal = String(knownSwimming).toLowerCase() === "true";
+      constraints.push(where("knownSwimming", "==", boolVal));
+    }
+
+    // numeric range for overAllExperience
+    if (typeof overAllExperienceMin !== "undefined") {
+      const minVal = Number(overAllExperienceMin);
+      if (!Number.isNaN(minVal))
+        constraints.push(where("overAllExperience", ">=", minVal));
+    }
+    if (typeof overAllExperienceMax !== "undefined") {
+      const maxVal = Number(overAllExperienceMax);
+      if (!Number.isNaN(maxVal))
+        constraints.push(where("overAllExperience", "<=", maxVal));
+    }
+
+    // timestamp range filters (accept epoch ms or ISO)
+    const toTimestamp = (val) => {
+      if (!val) return null;
+      // if numeric string or number -> treat as ms
+      if (!Number.isNaN(Number(val))) {
+        return Timestamp.fromMillis(Number(val));
+      }
+      // try Date parse
+      const d = new Date(val);
+      if (!Number.isNaN(d.getTime())) return Timestamp.fromMillis(d.getTime());
+      return null;
+    };
+
+    const startTs = toTimestamp(startTime);
+    const endTs = toTimestamp(endTime);
+    if (startTs) constraints.push(where("timestamp", ">=", startTs));
+    if (endTs) constraints.push(where("timestamp", "<=", endTs));
+
+    // Decide ordering
+    const orderField =
+      sortBy === "overAllExperience" ? "overAllExperience" : "timestamp";
+    const orderDirection = sortOrder === "asc" ? "asc" : "desc";
+
+    // Build base query with orderBy; for stable pagination we always include timestamp as second order if sorting by something else
+    const qConstraints = [];
+    // push where constraints first
+    constraints.forEach((c) => qConstraints.push(c));
+
+    qConstraints.push(orderBy(orderField, orderDirection));
+    // If sorting by overAllExperience, also order by timestamp as tie-breaker
+    if (orderField !== "timestamp") {
+      qConstraints.push(
+        orderBy("timestamp", orderDirection === "asc" ? "asc" : "desc")
+      );
+    }
+
+    // Cursor handling (startAfter)
+    let builtQuery;
+    if (cursor) {
+      // If sorting by timestamp, cursor expected as epoch ms or ISO
+      if (orderField === "timestamp") {
+        const cursorTs = toTimestamp(cursor);
+        if (!cursorTs) {
+          return res
+            .status(400)
+            .json({
+              error:
+                "Invalid cursor for timestamp. Use epoch ms or ISO date string.",
+            });
+        }
+        // startAfter needs the same ordering field(s) value(s)
+        builtQuery = query(
+          feedbacksCol,
+          ...qConstraints,
+          startAfter(cursorTs),
+          fbLimit(limitNumber)
+        );
+      } else {
+        // sorting by overAllExperience - cursor expected to be numeric (overAllExperience)
+        const cursorVal = Number(cursor);
+        if (Number.isNaN(cursorVal)) {
+          return res
+            .status(400)
+            .json({
+              error: "Invalid cursor for overAllExperience. Provide a number.",
+            });
+        }
+        // For stable pagination include timestamp as second cursor value if provided
+        if (lastTimestamp) {
+          const lastTs = toTimestamp(lastTimestamp);
+          if (!lastTs) {
+            return res
+              .status(400)
+              .json({
+                error:
+                  "Invalid lastTimestamp. Use epoch ms or ISO date string.",
+              });
+          }
+          builtQuery = query(
+            feedbacksCol,
+            ...qConstraints,
+            startAfter(cursorVal, lastTs),
+            fbLimit(limitNumber)
+          );
+        } else {
+          // only overAllExperience cursor -> Firestore will use single-field cursor
+          builtQuery = query(
+            feedbacksCol,
+            ...qConstraints,
+            startAfter(cursorVal),
+            fbLimit(limitNumber)
+          );
+        }
       }
     } else {
-      res.status(400).json({ message: "already you have active wander" });
+      builtQuery = query(feedbacksCol, ...qConstraints, fbLimit(limitNumber));
     }
+
+    // Execute
+    const snap = await getDocsExtra(builtQuery);
+    const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+    // Compute nextCursor for pagination: use last doc's ordering value(s)
+    let nextCursor = null;
+    if (snap.docs.length > 0) {
+      const lastDoc = snap.docs[snap.docs.length - 1];
+      const lastData = lastDoc.data();
+      if (orderField === "timestamp") {
+        // return epoch ms of last timestamp
+        if (lastData.timestamp && lastData.timestamp.toMillis) {
+          nextCursor = String(lastData.timestamp.toMillis());
+        } else {
+          // fallback - return undefined
+          nextCursor = null;
+        }
+      } else {
+        // overAllExperience cursor and lastTimestamp tie-breaker
+        const val =
+          typeof lastData.overAllExperience !== "undefined"
+            ? lastData.overAllExperience
+            : null;
+        const ts =
+          lastData.timestamp && lastData.timestamp.toMillis
+            ? String(lastData.timestamp.toMillis())
+            : null;
+        nextCursor = { cursor: val, lastTimestamp: ts };
+      }
+    }
+
+    return res.status(200).json({
+      data: docs,
+      nextCursor,
+      meta: {
+        pageSize: limitNumber,
+        returned: docs.length,
+        sortBy: orderField,
+        sortOrder: orderDirection,
+      },
+    });
   } catch (error) {
-    console.error(`🚀PUT:path:/wander/inivitation :error ${error}`);
-    res.status(500).json({ status: "Internal Server Error", message: error });
+    console.error("🚀 path:/feedback/admin/feedbacks error:", error);
+    // If missing composite index Firestore error includes a link; forward that message for dev visibility
+    return res.status(500).json({
+      status: "Internal Server Error",
+      message: error?.message || error,
+    });
   }
 });
-app.get("/active/wander", async (req, res) => {
+// Dashboard stats endpoint
+// GET /feedback/admin/dashboard/:businessId
+// Optional query param: forceRefresh=true  (will recompute from feedback docs and overwrite cache)
+app.get("/feedback/admin/dashboard/:businessId/dashboard", async (req, res) => {
   try {
-    const { wandererId } = req.query;
-    const wandererDocRef = doc(db, "wanderer_list", wandererId);
-    const wandererDocSnap = await getDoc(wandererDocRef);
-    const existingWanderer = wandererDocSnap.data();
-    if (existingWanderer) {
-      res.status(200).json({ activeWander: existingWanderer.activeWander });
-    } else {
-      res.status(200).json();
+    const { businessId } = req.params;
+    const { forceRefresh } = req.query;
+
+    // 1) Try to read cached stats stored in the business doc (prefer this)
+    const businessDocRef = doc(db, "business", businessId);
+    const businessSnap = await getDoc(businessDocRef);
+    if (!businessSnap.exists()) {
+      return res.status(404).json({ error: "Business not found" });
     }
-  } catch (error) {
-    console.error(`🚀GET:path:/active/wander :error ${error}`);
-    res.status(500).json({ status: "Internal Server Error", message: error });
-  }
-});
-app.get("/wander", async (req, res) => {
-  try {
-    const { wanderId } = req.query;
-    const wanderDocRef = doc(db, "wander_list", wanderId);
-    const wanderDocSnap = await getDoc(wanderDocRef);
-    const existingwander = wanderDocSnap.data();
-    if (existingwander) {
-      res.status(200).json({ existingwander });
-    } else {
-      res.status(200).json();
+
+    const businessData = businessSnap.data();
+
+    // If cached stats exist and no forceRefresh, return them
+    if (businessData && businessData.stats && !forceRefresh) {
+      return res.status(200).json({
+        source: "cache",
+        stats: businessData.stats,
+      });
     }
-  } catch (error) {
-    console.error(`🚀GET:path:/wander :error ${error}`);
-    res.status(500).json({ status: "Internal Server Error", message: error });
-  }
-});
-app.post("/add/expense", async (req, res) => {
-  try {
-    const wanderId = req.query.wander_id;
-    const body = req.body;
-    if (wanderId) {
-      const wanderDocRef = doc(db, "wander_list", wanderId);
-      const wanderDocSnap = await getDoc(wanderDocRef);
-      const wanderResult = wanderDocSnap.data();
-      const uuid = await uuidv4();
-      const shortUuid = uuid.slice(0, 23);
-      const exp_uuid = `exp_${shortUuid}`;
-      const newExp = { ...body, exp_uuid, key: exp_uuid };
-      let updatedWanderData = { ...wanderResult };
-      if (body.spendFrom === "trip_budget") {
-        updatedWanderData.WanderBudget =
-          (updatedWanderData.WanderBudget || 0) - body.expenseAmount;
-        updatedWanderData.WanderUtilized =
-          (updatedWanderData.WanderUtilized || 0) + body.expenseAmount;
+
+    // 2) Otherwise compute stats by scanning the feedbacks subcollection
+    // NOTE: This will read all feedback documents — expensive for a very large dataset.
+    const feedbacksCol = collection(db, "business", businessId, "feedbacks");
+    const feedbackSnap = await getDocs(feedbacksCol);
+    const totalFeedbacks = feedbackSnap.size;
+
+    // initialize aggregations
+    let sumOverall = 0;
+    const overallCounts = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 }; // counts for 1..5
+    let interestCounts = { interestedInOWC: 0, notInterested: 0 };
+    const activityCounts = {}; // dynamic map activityType -> count
+    // optional: sample of recent comments and sample emails
+    const recent = [];
+
+    feedbackSnap.forEach((docSnap) => {
+      const d = docSnap.data();
+
+      // timestamp safe read
+      const tsMillis = d.timestamp && d.timestamp.toMillis ? d.timestamp.toMillis() : null;
+
+      const rating = Number(d.overAllExperience) || 0;
+      if (rating >= 1 && rating <= 5) {
+        overallCounts[rating] = (overallCounts[rating] || 0) + 1;
+        sumOverall += rating;
       }
 
-      // Update the expenses array
-      updatedWanderData.expenses = [...(wanderResult.expenses || []), newExp];
-      await setDoc(wanderDocRef, updatedWanderData);
-      console.log(
-        `🚀-*-*-*  Expense Added Successfully In ${wanderId} -*-*-*🚀`
-      );
+      // interest
+      if (d.intrestedInOWC === true) {
+        interestCounts.interestedInOWC += 1;
+      } else {
+        interestCounts.notInterested += 1;
+      }
 
-      res.status(201).json({ message: "Expense Added Successfully" });
-    } else {
-      res.status(404).json({ message: "trip id is need" });
-    }
-  } catch (error) {
-    console.error(`🚀POST:path:/add/expense :error ${error}`);
-    res.status(500).json({ status: "Internal Server Error", message: error });
-  }
-});
+      // activity type (your field name is "Activity Type" in docs; your API uses activityType)
+      const activity = d["activityType"] || d.activityType || "unknown";
+      activityCounts[activity] = (activityCounts[activity] || 0) + 1;
 
-app.delete("/delete/expense", async (req, res) => {
-  try {
-    const wanderId = req.query.wander_id;
-    const expId = req.query.exp_id;
-    const wanderDocRef = doc(db, "wander_list", wanderId);
-    const wanderDocSnap = await getDoc(wanderDocRef);
-    const wanderResult = wanderDocSnap.data();
-
-    const index = wanderResult.expenses.findIndex(
-      (expense) => expense.exp_uuid === expId
-    );
-    const expenseToDelete = wanderResult.expenses[index];
-
-    // Update WanderBudget and WanderUtilized if spendFrom is trip_budget
-    if (expenseToDelete.spendFrom === "trip_budget") {
-      wanderResult.WanderBudget =
-        (wanderResult.WanderBudget || 0) + expenseToDelete.expenseAmount;
-      wanderResult.WanderUtilized =
-        (wanderResult.WanderUtilized || 0) - expenseToDelete.expenseAmount;
-    }
-
-    // Remove the expense from the array
-    wanderResult.expenses.splice(index, 1);
-    //   Update the document with new data
-    await updateDoc(wanderDocRef, {
-      expenses: wanderResult.expenses,
-      WanderBudget: wanderResult.WanderBudget,
-      WanderUtilized: wanderResult.WanderUtilized,
+      // collect some recent items for dashboard (up to 10)
+      if (recent.length < 10) {
+        recent.push({
+          id: docSnap.id,
+          timestamp: tsMillis,
+          email: d.email,
+          phoneNo: d.phoneNo,
+          activity,
+          overAllExperience: d.overAllExperience,
+          comments: d.comments,
+          intrestedInOWC: d.intrestedInOWC,
+          knownSwimming: d.knownSwimming,
+        });
+      }
     });
-    console.log(
-      `🚀-*-*-*  Expense Deleted Successfully In ${wanderId} -*-*-*🚀`
-    );
-    res.status(200).json({ message: "Expense Deleted Successfully" });
-    return;
-  } catch (error) {
-    console.error(`🚀DELETE:path:/delete/expense :error ${error}`);
-    res.status(500).json({ status: "Internal Server Error", message: error });
-  }
-});
 
-app.post("/complete/wander", async (req, res) => {
-  try {
-    const wanderId = req.query.wander_id;
-    const wander = req.body;
+    const avgOverallExperience =
+      totalFeedbacks > 0 ? parseFloat((sumOverall / totalFeedbacks).toFixed(2)) : 0;
 
-    wander.wandererList.forEach(async (wanderer) => {
-      const userDocRef = doc(db, "wanderer_list", wanderer.wanderer_id);
-      const wanderer_name = wanderer.wanderer_name;
-      const userDocSnap = await getDoc(userDocRef);
-      const userResult = userDocSnap.data();
+    const stats = {
+      totalFeedbacks,
+      avgOverallExperience,
+      overallCounts,
+      interestCounts,
+      activityCounts,
+      // recentSample: recent,
+      lastUpdatedAt: Date.now(),
+    };
 
-      const activeIndex = userResult.activeWander.indexOf(wanderId);
-      userResult.activeWander.splice(activeIndex, 1);
-      userResult.completedWander.push({
-        WanderName: wander.WanderName,
-        wander_uuid: wander.wander_uuid,
-        WanderDestination: wander.WanderDestination,
-      });
-      await updateDoc(userDocRef, {
-        activeWander: userResult.activeWander,
-        completedWander: userResult.completedWander,
-      });
-    });
-    console.log(
-      `🚀-*-*-*  Wander Completed Successfully  ${wanderId} -*-*-*🚀`
-    );
-    res.status(200).json({ message: " Wander Completed Successfully" });
-  } catch (error) {
-    console.error(`🚀POST:path:/complete/wander:error ${error}`);
-    res.status(500).json({ status: "Internal Server Error", message: error });
-  }
-});
-app.post("/delete/wander", async (req, res) => {
-  try {
-    const wanderId = req.query.wander_id;
-    const wander = req.body;
-    const wanderDocRef = doc(db, "wander_list", wanderId);
-    await deleteDoc(wanderDocRef);
-
-    wander.wandererList.forEach(async (wanderer) => {
-      const userDocRef = doc(db, "wanderer_list", wanderer.wanderer_id);
-      const wanderer_name = wanderer.wanderer_name;
-      const userDocSnap = await getDoc(userDocRef);
-      const userResult = userDocSnap.data();
-      userResult.activeWander = userResult.activeWander.filter(
-        (activeWander) => activeWander.wander_uuid !== wanderId
-      );
-      userResult.invite = userResult.invite.filter(
-        (invite) => invite.wander_uuid !== wanderId
-      );
-      await updateDoc(userDocRef, {
-        activeWander: userResult.activeWander,
-        invite: userResult.invite,
-      });
-    });
-    console.log(`🚀-*-*-*  Wander Deleted Successfully  ${wanderId} -*-*-*🚀`);
-    res.status(200).json({ message: "Wander Deleted Successfully" });
-  } catch (error) {
-    console.error(`🚀POST:path:/delete/wander :error ${error}`);
-    res.status(500).json({ status: "Internal Server Error", message: error });
-  }
-});
-
-app.get("/all/wander", async (req, res) => {
-  try {
-    const { wandererId } = req.query;
-    const wandererDocRef = doc(db, "wanderer_list", wandererId);
-    const wandererDocSnap = await getDoc(wandererDocRef);
-    const existingWanderer = wandererDocSnap.data();
-    if (existingWanderer) {
-      res.status(200).json({
-        activeWander: existingWanderer.activeWander,
-        completedWander: existingWanderer.completedWander,
-      });
-    } else {
-      res.status(200).json();
+    // 3) cache back into the business doc for faster dashboard reads later
+    // We will write a `stats` field on the business document. Overwrites existing stats.
+    try {
+      await updateDoc(businessDocRef, { stats });
+    } catch (writeErr) {
+      // If update fails (permissions) just log and continue — still return computed stats.
+      console.error("Failed to write cached stats:", writeErr);
     }
+
+    return res.status(200).json({
+      source: "computed",
+      stats,
+    });
   } catch (error) {
-    console.error(`🚀GET:path:/all/wander :error ${error}`);
-    res.status(500).json({ status: "Internal Server Error", message: error });
+    console.error("Error in dashboard endpoint:", error);
+    return res.status(500).json({ error: error.message || error });
   }
 });
+
+
 app.use((req, res, next) => {
   res.header("Access-Control-Allow-Origin", "*");
   res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE");
