@@ -85,7 +85,7 @@ const checkPlan = async (req, res, next) => {
   }
 };
 
-app.post("/feedback/login", async (req, res) => {
+app.post("/feedback/admin/login", async (req, res) => {
   try {
     const { email, name, photoUrl } = req.body;
     const existing = await getData(db, "admin_list", email);
@@ -120,7 +120,7 @@ app.post("/feedback/login", async (req, res) => {
   }
 });
 
-app.get("/feedback/business", async (req, res) => {
+app.get("/feedback/admin/all/business", async (req, res) => {
   try {
     const { email } = req.query;
     const existing = await getData(db, "admin_list", email);
@@ -134,7 +134,8 @@ app.get("/feedback/business", async (req, res) => {
     res.status(500).json({ status: "Internal Server Error", message: error });
   }
 });
-app.post("/feedback/business", checkPlan, async (req, res) => {
+
+app.post("/feedback/admin/business", checkPlan, async (req, res) => {
   try {
     const {
       businessName,
@@ -151,11 +152,13 @@ app.post("/feedback/business", checkPlan, async (req, res) => {
     const urlEncode = Buffer.from(
       JSON.stringify({
         businessId: business_uuid,
-        businessName: businessName,
-        placeId: placeId,
       })
     ).toString("base64");
     const data = {
+      businessId: business_uuid,
+      businessName: businessName,
+    };
+    const overAllData = {
       businessId: business_uuid,
       businessName: businessName,
       tagLine: tagLine,
@@ -171,7 +174,16 @@ app.post("/feedback/business", checkPlan, async (req, res) => {
     };
     console.log("🚀 ~ updatedData:", updatedData);
     await setData(db, "admin_list", email, updatedData);
-
+    const existingBusinessId = await getData(db, "business", business_uuid);
+    if (!existingBusinessId) {
+      const businessCollectionRef = collection(db, "business");
+      const businessDocRef = doc(businessCollectionRef, business_uuid);
+      await setDoc(businessDocRef, overAllData);
+    } else {
+      res.status(500).json({
+        message: `try again business id already exists`,
+      });
+    }
     res.status(200).json({
       message: `added successfully`,
       url: `www.feedback.web.app/${urlEncode}`,
@@ -181,7 +193,8 @@ app.post("/feedback/business", checkPlan, async (req, res) => {
     res.status(500).json({ status: "Internal Server Error", message: error });
   }
 });
-app.delete("/feedback/business/:businessId", async (req, res) => {
+
+app.delete("/feedback/admin/business/:businessId", async (req, res) => {
   try {
     const email = req.query.email;
     const { businessId } = req.params;
@@ -203,6 +216,22 @@ app.delete("/feedback/business/:businessId", async (req, res) => {
       status: "Internal Server Error",
       message: error?.message || error,
     });
+  }
+});
+
+app.get("/feedback/business/:businessId", async (req, res) => {
+  try {
+    const { businessId } = req.params;
+    const existing = await getData(db, "business", businessId);
+    console.log("🚀 ~ existing:", existing);
+    if (existing) {
+      res.status(200).json(existing);
+    } else {
+      res.status(200).json({ info: "No business found" });
+    }
+  } catch (error) {
+    console.error(`🚀path:/wanderer :error ${error}`);
+    res.status(500).json({ status: "Internal Server Error", message: error });
   }
 });
 
