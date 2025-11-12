@@ -35,7 +35,7 @@ const db = getFirestore(firebaseApp);
 app.use(bodyParser.json());
 const server = http.createServer(app);
 require("dotenv").config();
-console.log("env-----",process.env.GMAIL_USER); // prints your gmail address
+console.log("env-----", process.env.GMAIL_USER); // prints your gmail address
 
 // Add at top of file
 
@@ -505,7 +505,9 @@ function buildCSV(rows) {
   }
   const header = keys.join(",");
   const lines = rows.map((r) =>
-    keys.map((k) => csvEscape(typeof r[k] === "undefined" ? "" : r[k])).join(",")
+    keys
+      .map((k) => csvEscape(typeof r[k] === "undefined" ? "" : r[k]))
+      .join(",")
   );
   return [header, ...lines].join("\n");
 }
@@ -539,18 +541,22 @@ function createTransporter(provider, creds) {
   throw new Error("Unsupported provider: " + provider);
 }
 
+// keep your helpers: csvEscape, buildCSV, createTransporter
+
 app.get("/feedback/admin/feedbacks/:businessId/export", async (req, res) => {
   try {
     const { businessId } = req.params;
-    // provider query: "gmail" or "zoho" (default gmail)
-    const provider = (req.query.provider || "gmail").replace(/"/g, "").toLowerCase();
+    const provider = (req.query.provider || "gmail")
+      .replace(/"/g, "")
+      .toLowerCase();
 
-    // Validate provider
     if (!["gmail", "zoho"].includes(provider)) {
-      return res.status(400).json({ error: 'provider must be "gmail" or "zoho"' });
+      return res
+        .status(400)
+        .json({ error: 'provider must be "gmail" or "zoho"' });
     }
 
-    // --- 1) Load business doc to get emailNotifier ---
+    // Basic validations (quick) before accepting the request:
     const businessRef = doc(db, "business", businessId);
     const businessSnap = await getDoc(businessRef);
     if (!businessSnap.exists()) {
@@ -562,87 +568,111 @@ app.get("/feedback/admin/feedbacks/:businessId/export", async (req, res) => {
       return res.status(400).json({ error: "Business.emailNotifier not set" });
     }
 
-    // --- 2) Load all feedback docs for this business ---
-    const feedbacksCol = collection(db, "business", businessId, "feedbacks");
-    const feedbackSnap = await getDocs(feedbacksCol);
-    const docs = feedbackSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-
-    // If no data, respond with message and no email sent
-    if (!docs.length) {
-      return res.status(200).json({
-        message: "No feedback documents to export",
-        exportedCount: 0,
-      });
-    }
-
-    // --- 3) Normalize documents: convert Timestamp to ISO, flatten if needed ---
-    const normalized = docs.map((d) => {
-      const out = {};
-      for (const key of Object.keys(d)) {
-        const val = d[key];
-        // Convert Firestore Timestamp to ISO string
-        if (val && typeof val.toMillis === "function") {
-          out[key] = new Date(val.toMillis()).toISOString();
-        } else {
-          out[key] = val;
-        }
-      }
-      return out;
-    });
-
-    // --- 4) Build CSV ---
-    const csv = buildCSV(normalized);
-    const filename = `feedbacks_${businessId}_${Date.now()}.csv`;
-
-    // --- 5) Get SMTP creds from env (or you can store them securely elsewhere)
-    // Example env vars:
-    // GMAIL_USER, GMAIL_PASS
-    // ZOHO_USER, ZOHO_PASS
-    const creds = (provider === "gmail")
-      ? { user: process.env.GMAIL_USER, pass: process.env.GMAIL_PASS, host: process.env.GMAIL_HOST, port: process.env.GMAIL_PORT, secure: process.env.GMAIL_SECURE === "true" }
-      : { user: process.env.ZOHO_USER, pass: process.env.ZOHO_PASS, host: process.env.ZOHO_HOST, port: process.env.ZOHO_PORT, secure: process.env.ZOHO_SECURE === "true" };
+    // check credentials exist for selected provider
+    const creds =
+      provider === "gmail"
+        ? {
+            user: process.env.GMAIL_USER,
+            pass: process.env.GMAIL_PASS,
+            host: process.env.GMAIL_HOST,
+            port: process.env.GMAIL_PORT,
+            secure: process.env.GMAIL_SECURE === "true",
+          }
+        : {
+            user: process.env.ZOHO_USER,
+            pass: process.env.ZOHO_PASS,
+            host: process.env.ZOHO_HOST,
+            port: process.env.ZOHO_PORT,
+            secure: process.env.ZOHO_SECURE === "true",
+          };
 
     if (!creds.user || !creds.pass) {
-      return res.status(500).json({ error: `SMTP credentials for ${provider} are not set in environment` });
+      return res
+        .status(500)
+        .json({
+          error: `SMTP credentials for ${provider} are not set in environment`,
+        });
     }
 
-    // --- 6) Create transporter & send email ---
-    const transporter = createTransporter(provider, creds);
-
-    // Use business email as from if you want (or use creds.user)
-    const fromEmail = creds.user; // safer to use authenticated user
-
-    const mailOptions = {
-      from: `"Feedback Export" <${fromEmail}>`,
-      to: toEmail, // one recipient from business.emailNotifier
-      subject: `Feedback export for business ${businessId}`,
-      text: `Attached is the CSV export of ${docs.length} feedback documents for business ${businessId}.`,
-      attachments: [
-        {
-          filename,
-          content: csv,
-        },
-      ],
-    };
-
-    // send email
-    const info = await transporter.sendMail(mailOptions);
-
-    // Return success with some meta
-    return res.status(200).json({
-      message: "Export created and email sent",
+    // Immediately respond to caller — job accepted
+    res.status(202).json({
+      message: "Export job accepted. CSV will be created and emailed shortly.",
+      businessId,
       provider,
-      to: toEmail,
-      exportedCount: docs.length,
-      filename,
-      mailInfo: {
-        accepted: info.accepted,
-        rejected: info.rejected,
-        response: info.response,
-      },
     });
+
+    // Fire-and-forget async worker (do not await)
+    (async () => {
+      try {
+        // --- load all feedback docs ---
+        const feedbacksCol = collection(
+          db,
+          "business",
+          businessId,
+          "feedbacks"
+        );
+        const feedbackSnap = await getDocs(feedbacksCol);
+        const docs = feedbackSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+        if (!docs.length) {
+          console.log(
+            `[export-job] No feedback docs for business ${businessId}. No email sent.`
+          );
+          return;
+        }
+
+        // --- normalize and build CSV ---
+        const normalized = docs.map((d) => {
+          const out = {};
+          for (const key of Object.keys(d)) {
+            const val = d[key];
+            if (val && typeof val.toMillis === "function") {
+              out[key] = new Date(val.toMillis()).toISOString();
+            } else {
+              out[key] = val;
+            }
+          }
+          return out;
+        });
+
+        const csv = buildCSV(normalized);
+        const filename = `feedbacks_${businessId}_${Date.now()}.csv`;
+
+        // --- create transporter and send mail ---
+        const transporter = createTransporter(provider, creds);
+        const fromEmail = creds.user;
+
+        const mailOptions = {
+          from: `"Feedback Export" <${fromEmail}>`,
+          to: toEmail,
+          subject: `Feedback export for business ${businessId}`,
+          text: `Attached is the CSV export of ${docs.length} feedback documents for business ${businessId}.`,
+          attachments: [{ filename, content: csv }],
+        };
+
+        const info = await transporter.sendMail(mailOptions);
+        console.log(
+          `[export-job] Email sent for business ${businessId} via ${provider}. info=`,
+          {
+            accepted: info.accepted,
+            rejected: info.rejected,
+            response: info.response,
+          }
+        );
+      } catch (innerErr) {
+        // Log details for debugging & possible retry later
+        console.error(
+          `[export-job] Error processing export for business ${businessId}:`,
+          innerErr
+        );
+        // Optional: push this failure into a persistent error queue or DB so you can retry later
+      }
+    })();
+
+    // done — immediate response already sent
+    return;
   } catch (err) {
-    console.error("Export error:", err);
+    console.error("Export route immediate validation error:", err);
     return res.status(500).json({ error: err.message || String(err) });
   }
 });
