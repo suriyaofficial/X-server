@@ -21,11 +21,10 @@ const {
   getDocs: getDocsExtra,
   Timestamp,
   serverTimestamp,
+  getCountFromServer,
 } = require("@firebase/firestore");
 const firebaseConfig = require("./master_firebaseconfig");
 const http = require("http");
-const socketIo = require("socket.io");
-const { timeStamp } = require("console");
 const app = express();
 app.use(cors()); // Enable CORS for all routes
 const port = 3100;
@@ -33,19 +32,6 @@ const firebaseApp = initializeApp(firebaseConfig);
 const db = getFirestore(firebaseApp);
 app.use(bodyParser.json());
 const server = http.createServer(app);
-
-const io = socketIo(server, {
-  cors: {
-    origin: "*", // Specify the allowed origin for Socket.io
-    // methods: ["GET", "POST"]
-  },
-});
-
-io.on("connection", (socket) => {
-  // Listen for messages from the client
-  // Disconnect event
-  socket.on("disconnect", (msg) => {});
-});
 
 server.listen(port, () => {
   console.log(`🚀 Server is running on http://localhost:${port}`);
@@ -142,7 +128,7 @@ app.get("/feedback/admin/all/business", async (req, res) => {
       res.status(200).json({ info: "No business found" });
     }
   } catch (error) {
-    console.error(`🚀path:/wanderer :error ${error}`);
+    console.error(`🚀path:/all/business :error ${error}`);
     res.status(500).json({ status: "Internal Server Error", message: error });
   }
 });
@@ -158,7 +144,6 @@ app.post("/feedback/:businessId", async (req, res) => {
       intrestedInOWC,
       knownSwimming,
     } = req.body);
-    // const  feedbackData ={"email": "scubadiver.suriya@gmail.com", "phoneNo": "7092925555", "Activity Type": "dsd", "overAllExperience": 4, "comments": "thanks", "intrestedInOWC": true, "knownSwimming": true}
     const feedbackRef = doc(
       collection(db, "business", businessId, "feedbacks")
     ); // auto id
@@ -173,7 +158,7 @@ app.post("/feedback/:businessId", async (req, res) => {
       res.status(200).json({ info: "No business found" });
     }
   } catch (error) {
-    console.error(`🚀path:/wanderer :error ${error}`);
+    console.error(`🚀path:/feedback/business :error ${error}`);
     res.status(500).json({ status: "Internal Server Error", message: error });
   }
 });
@@ -215,7 +200,6 @@ app.post("/feedback/admin/business", checkPlan, async (req, res) => {
       ...existing,
       business: [...existing.business, data],
     };
-    console.log("🚀 ~ updatedData:", updatedData);
     await setData(db, "admin_list", email, updatedData);
     const existingBusinessId = await getData(db, "business", business_uuid);
     if (!existingBusinessId) {
@@ -266,7 +250,6 @@ app.get("/feedback/business/:businessId", async (req, res) => {
   try {
     const { businessId } = req.params;
     const existing = await getData(db, "business", businessId);
-    console.log("🚀 ~ existing:", existing);
     if (existing) {
       res.status(200).json(existing);
     } else {
@@ -282,7 +265,8 @@ app.get("/feedback/admin/feedbacks/:businessId", async (req, res) => {
   try {
     const { businessId } = req.params;
     const {
-      pageSize = 100,
+      pageNo = 1,
+      pageSize = 10,
       sortBy = "timestamp",
       sortOrder = "desc",
       activityType,
@@ -292,197 +276,113 @@ app.get("/feedback/admin/feedbacks/:businessId", async (req, res) => {
       overAllExperienceMax,
       startTime,
       endTime,
-      cursor,
-      lastTimestamp, // optional helper for tie-break when sorting by overAllExperience
     } = req.query;
 
-    // Validate pageSize
+    // --- Pagination ---
     const limitNumber = Math.min(
-      Math.max(parseInt(pageSize, 10) || 20, 1),
+      Math.max(parseInt(pageSize, 10) || 10, 1),
       100
     );
+    const currentPage = Math.max(parseInt(pageNo, 10) || 1, 1);
+    const offset = (currentPage - 1) * limitNumber;
 
-    // Build collection ref
+    // --- Firestore ref ---
     const feedbacksCol = collection(db, "business", businessId, "feedbacks");
-
-    // Start building where clauses
     const constraints = [];
 
-    // equality filters
-    if (activityType) {
+    // --- Filters ---
+    if (activityType)
       constraints.push(where("activityType", "==", activityType));
-    }
+    if (typeof intrestedInOWC !== "undefined")
+      constraints.push(
+        where(
+          "intrestedInOWC",
+          "==",
+          String(intrestedInOWC).toLowerCase() === "true"
+        )
+      );
+    if (typeof knownSwimming !== "undefined")
+      constraints.push(
+        where(
+          "knownSwimming",
+          "==",
+          String(knownSwimming).toLowerCase() === "true"
+        )
+      );
+    if (typeof overAllExperienceMin !== "undefined")
+      constraints.push(
+        where("overAllExperience", ">=", Number(overAllExperienceMin))
+      );
+    if (typeof overAllExperienceMax !== "undefined")
+      constraints.push(
+        where("overAllExperience", "<=", Number(overAllExperienceMax))
+      );
 
-    if (typeof intrestedInOWC !== "undefined") {
-      const boolVal = String(intrestedInOWC).toLowerCase() === "true";
-      constraints.push(where("intrestedInOWC", "==", boolVal));
-    }
-
-    if (typeof knownSwimming !== "undefined") {
-      const boolVal = String(knownSwimming).toLowerCase() === "true";
-      constraints.push(where("knownSwimming", "==", boolVal));
-    }
-
-    // numeric range for overAllExperience
-    if (typeof overAllExperienceMin !== "undefined") {
-      const minVal = Number(overAllExperienceMin);
-      if (!Number.isNaN(minVal))
-        constraints.push(where("overAllExperience", ">=", minVal));
-    }
-    if (typeof overAllExperienceMax !== "undefined") {
-      const maxVal = Number(overAllExperienceMax);
-      if (!Number.isNaN(maxVal))
-        constraints.push(where("overAllExperience", "<=", maxVal));
-    }
-
-    // timestamp range filters (accept epoch ms or ISO)
+    // --- Date Range ---
     const toTimestamp = (val) => {
       if (!val) return null;
-      // if numeric string or number -> treat as ms
-      if (!Number.isNaN(Number(val))) {
-        return Timestamp.fromMillis(Number(val));
-      }
-      // try Date parse
+      if (!Number.isNaN(Number(val))) return Timestamp.fromMillis(Number(val));
       const d = new Date(val);
-      if (!Number.isNaN(d.getTime())) return Timestamp.fromMillis(d.getTime());
-      return null;
+      return Number.isNaN(d.getTime())
+        ? null
+        : Timestamp.fromMillis(d.getTime());
     };
-
     const startTs = toTimestamp(startTime);
     const endTs = toTimestamp(endTime);
     if (startTs) constraints.push(where("timestamp", ">=", startTs));
     if (endTs) constraints.push(where("timestamp", "<=", endTs));
 
-    // Decide ordering
+    // --- Sorting ---
     const orderField =
       sortBy === "overAllExperience" ? "overAllExperience" : "timestamp";
     const orderDirection = sortOrder === "asc" ? "asc" : "desc";
 
-    // Build base query with orderBy; for stable pagination we always include timestamp as second order if sorting by something else
-    const qConstraints = [];
-    // push where constraints first
-    constraints.forEach((c) => qConstraints.push(c));
+    // --- Get Total Count (unfiltered) ---
+    const totalSnap = await getCountFromServer(feedbacksCol);
+    const totalCount = totalSnap.data().count;
 
-    qConstraints.push(orderBy(orderField, orderDirection));
-    // If sorting by overAllExperience, also order by timestamp as tie-breaker
-    if (orderField !== "timestamp") {
-      qConstraints.push(
-        orderBy("timestamp", orderDirection === "asc" ? "asc" : "desc")
-      );
-    }
+    // --- Get Filtered Count (with filters) ---
+    const filterQuery = query(feedbacksCol, ...constraints);
+    const filteredSnap = await getCountFromServer(filterQuery);
+    const filteredCount = filteredSnap.data().count;
 
-    // Cursor handling (startAfter)
-    let builtQuery;
-    if (cursor) {
-      // If sorting by timestamp, cursor expected as epoch ms or ISO
-      if (orderField === "timestamp") {
-        const cursorTs = toTimestamp(cursor);
-        if (!cursorTs) {
-          return res
-            .status(400)
-            .json({
-              error:
-                "Invalid cursor for timestamp. Use epoch ms or ISO date string.",
-            });
-        }
-        // startAfter needs the same ordering field(s) value(s)
-        builtQuery = query(
-          feedbacksCol,
-          ...qConstraints,
-          startAfter(cursorTs),
-          fbLimit(limitNumber)
-        );
-      } else {
-        // sorting by overAllExperience - cursor expected to be numeric (overAllExperience)
-        const cursorVal = Number(cursor);
-        if (Number.isNaN(cursorVal)) {
-          return res
-            .status(400)
-            .json({
-              error: "Invalid cursor for overAllExperience. Provide a number.",
-            });
-        }
-        // For stable pagination include timestamp as second cursor value if provided
-        if (lastTimestamp) {
-          const lastTs = toTimestamp(lastTimestamp);
-          if (!lastTs) {
-            return res
-              .status(400)
-              .json({
-                error:
-                  "Invalid lastTimestamp. Use epoch ms or ISO date string.",
-              });
-          }
-          builtQuery = query(
-            feedbacksCol,
-            ...qConstraints,
-            startAfter(cursorVal, lastTs),
-            fbLimit(limitNumber)
-          );
-        } else {
-          // only overAllExperience cursor -> Firestore will use single-field cursor
-          builtQuery = query(
-            feedbacksCol,
-            ...qConstraints,
-            startAfter(cursorVal),
-            fbLimit(limitNumber)
-          );
-        }
-      }
-    } else {
-      builtQuery = query(feedbacksCol, ...qConstraints, fbLimit(limitNumber));
-    }
+    // --- Fetch with sorting + pseudo offset ---
+    const dataQuery = query(
+      feedbacksCol,
+      ...constraints,
+      orderBy(orderField, orderDirection),
+      fbLimit(offset + limitNumber + 1)
+    );
 
-    // Execute
-    const snap = await getDocsExtra(builtQuery);
-    const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    const snap = await getDocsExtra(dataQuery);
+    const allDocs = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
-    // Compute nextCursor for pagination: use last doc's ordering value(s)
-    let nextCursor = null;
-    if (snap.docs.length > 0) {
-      const lastDoc = snap.docs[snap.docs.length - 1];
-      const lastData = lastDoc.data();
-      if (orderField === "timestamp") {
-        // return epoch ms of last timestamp
-        if (lastData.timestamp && lastData.timestamp.toMillis) {
-          nextCursor = String(lastData.timestamp.toMillis());
-        } else {
-          // fallback - return undefined
-          nextCursor = null;
-        }
-      } else {
-        // overAllExperience cursor and lastTimestamp tie-breaker
-        const val =
-          typeof lastData.overAllExperience !== "undefined"
-            ? lastData.overAllExperience
-            : null;
-        const ts =
-          lastData.timestamp && lastData.timestamp.toMillis
-            ? String(lastData.timestamp.toMillis())
-            : null;
-        nextCursor = { cursor: val, lastTimestamp: ts };
-      }
-    }
+    const paginatedDocs = allDocs.slice(offset, offset + limitNumber);
+    const nextPageAvailable = allDocs.length > offset + limitNumber;
+    const returnedCount = paginatedDocs.length;
 
     return res.status(200).json({
-      data: docs,
-      nextCursor,
+      data: paginatedDocs,
+      nextPageAvailable,
       meta: {
+        pageNo: currentPage,
         pageSize: limitNumber,
-        returned: docs.length,
+        returnedCount,
+        filteredCount,
+        totalCount,
         sortBy: orderField,
         sortOrder: orderDirection,
       },
     });
   } catch (error) {
     console.error("🚀 path:/feedback/admin/feedbacks error:", error);
-    // If missing composite index Firestore error includes a link; forward that message for dev visibility
     return res.status(500).json({
       status: "Internal Server Error",
       message: error?.message || error,
     });
   }
 });
+
 // Dashboard stats endpoint
 // GET /feedback/admin/dashboard/:businessId
 // Optional query param: forceRefresh=true  (will recompute from feedback docs and overwrite cache)
@@ -499,7 +399,6 @@ app.get("/feedback/admin/dashboard/:businessId/dashboard", async (req, res) => {
     }
 
     const businessData = businessSnap.data();
-
     // If cached stats exist and no forceRefresh, return them
     if (businessData && businessData.stats && !forceRefresh) {
       return res.status(200).json({
@@ -507,62 +406,41 @@ app.get("/feedback/admin/dashboard/:businessId/dashboard", async (req, res) => {
         stats: businessData.stats,
       });
     }
-
     // 2) Otherwise compute stats by scanning the feedbacks subcollection
     // NOTE: This will read all feedback documents — expensive for a very large dataset.
     const feedbacksCol = collection(db, "business", businessId, "feedbacks");
     const feedbackSnap = await getDocs(feedbacksCol);
     const totalFeedbacks = feedbackSnap.size;
-
     // initialize aggregations
     let sumOverall = 0;
     const overallCounts = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 }; // counts for 1..5
     let interestCounts = { interestedInOWC: 0, notInterested: 0 };
     const activityCounts = {}; // dynamic map activityType -> count
     // optional: sample of recent comments and sample emails
-    const recent = [];
-
     feedbackSnap.forEach((docSnap) => {
       const d = docSnap.data();
-
       // timestamp safe read
-      const tsMillis = d.timestamp && d.timestamp.toMillis ? d.timestamp.toMillis() : null;
 
       const rating = Number(d.overAllExperience) || 0;
       if (rating >= 1 && rating <= 5) {
         overallCounts[rating] = (overallCounts[rating] || 0) + 1;
         sumOverall += rating;
       }
-
       // interest
       if (d.intrestedInOWC === true) {
         interestCounts.interestedInOWC += 1;
       } else {
         interestCounts.notInterested += 1;
       }
-
       // activity type (your field name is "Activity Type" in docs; your API uses activityType)
       const activity = d["activityType"] || d.activityType || "unknown";
       activityCounts[activity] = (activityCounts[activity] || 0) + 1;
-
-      // collect some recent items for dashboard (up to 10)
-      if (recent.length < 10) {
-        recent.push({
-          id: docSnap.id,
-          timestamp: tsMillis,
-          email: d.email,
-          phoneNo: d.phoneNo,
-          activity,
-          overAllExperience: d.overAllExperience,
-          comments: d.comments,
-          intrestedInOWC: d.intrestedInOWC,
-          knownSwimming: d.knownSwimming,
-        });
-      }
     });
 
     const avgOverallExperience =
-      totalFeedbacks > 0 ? parseFloat((sumOverall / totalFeedbacks).toFixed(2)) : 0;
+      totalFeedbacks > 0
+        ? parseFloat((sumOverall / totalFeedbacks).toFixed(2))
+        : 0;
 
     const stats = {
       totalFeedbacks,
@@ -570,8 +448,7 @@ app.get("/feedback/admin/dashboard/:businessId/dashboard", async (req, res) => {
       overallCounts,
       interestCounts,
       activityCounts,
-      // recentSample: recent,
-      lastUpdatedAt: Date.now(),
+      lastUpdatedAt: serverTimestamp(),
     };
 
     // 3) cache back into the business doc for faster dashboard reads later
@@ -592,7 +469,6 @@ app.get("/feedback/admin/dashboard/:businessId/dashboard", async (req, res) => {
     return res.status(500).json({ error: error.message || error });
   }
 });
-
 
 app.use((req, res, next) => {
   res.header("Access-Control-Allow-Origin", "*");
