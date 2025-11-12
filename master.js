@@ -3,6 +3,8 @@ const bodyParser = require("body-parser");
 const path = require("path");
 const { v4: uuidv4 } = require("uuid");
 const cors = require("cors");
+const nodemailer = require("nodemailer");
+const stream = require("stream");
 const { initializeApp } = require("firebase/app");
 const {
   getFirestore,
@@ -32,6 +34,10 @@ const firebaseApp = initializeApp(firebaseConfig);
 const db = getFirestore(firebaseApp);
 app.use(bodyParser.json());
 const server = http.createServer(app);
+require("dotenv").config();
+console.log("env-----",process.env.GMAIL_USER); // prints your gmail address
+
+// Add at top of file
 
 server.listen(port, () => {
   console.log(`🚀 Server is running on http://localhost:${port}`);
@@ -467,6 +473,177 @@ app.get("/feedback/admin/dashboard/:businessId/dashboard", async (req, res) => {
   } catch (error) {
     console.error("Error in dashboard endpoint:", error);
     return res.status(500).json({ error: error.message || error });
+  }
+});
+
+// Helper to escape CSV values
+function csvEscape(val) {
+  if (val === null || typeof val === "undefined") return "";
+  // For Firestore Timestamp -> convert to ISO
+  if (val && typeof val.toMillis === "function") {
+    val = new Date(val.toMillis()).toISOString();
+  }
+  // convert objects/arrays to JSON string
+  if (typeof val === "object") val = JSON.stringify(val);
+  const s = String(val);
+  // escape quotes by doubling, wrap with quotes if contains comma/newline/quote
+  if (/[",\n\r]/.test(s)) {
+    return `"${s.replace(/"/g, '""')}"`;
+  }
+  return s;
+}
+
+// Build CSV from array of objects
+function buildCSV(rows) {
+  if (!rows || !rows.length) return "";
+  // Collect all unique keys in order of first appearance
+  const keys = [];
+  for (const r of rows) {
+    Object.keys(r).forEach((k) => {
+      if (!keys.includes(k)) keys.push(k);
+    });
+  }
+  const header = keys.join(",");
+  const lines = rows.map((r) =>
+    keys.map((k) => csvEscape(typeof r[k] === "undefined" ? "" : r[k])).join(",")
+  );
+  return [header, ...lines].join("\n");
+}
+
+// Create transporter based on provider
+function createTransporter(provider, creds) {
+  // creds: { user, pass, host?, port?, secure? } - prefer env values
+  if (provider === "gmail") {
+    return nodemailer.createTransport({
+      host: creds.host || "smtp.gmail.com",
+      port: creds.port ? Number(creds.port) : 465,
+      secure: typeof creds.secure !== "undefined" ? creds.secure : true,
+      auth: {
+        user: creds.user,
+        pass: creds.pass,
+      },
+    });
+  }
+  // zoho
+  if (provider === "zoho") {
+    return nodemailer.createTransport({
+      host: creds.host || "smtp.zoho.com",
+      port: creds.port ? Number(creds.port) : 465,
+      secure: typeof creds.secure !== "undefined" ? creds.secure : true,
+      auth: {
+        user: creds.user,
+        pass: creds.pass,
+      },
+    });
+  }
+  throw new Error("Unsupported provider: " + provider);
+}
+
+app.get("/feedback/admin/feedbacks/:businessId/export", async (req, res) => {
+  try {
+    const { businessId } = req.params;
+    // provider query: "gmail" or "zoho" (default gmail)
+    const provider = (req.query.provider || "gmail").replace(/"/g, "").toLowerCase();
+
+    // Validate provider
+    if (!["gmail", "zoho"].includes(provider)) {
+      return res.status(400).json({ error: 'provider must be "gmail" or "zoho"' });
+    }
+
+    // --- 1) Load business doc to get emailNotifier ---
+    const businessRef = doc(db, "business", businessId);
+    const businessSnap = await getDoc(businessRef);
+    if (!businessSnap.exists()) {
+      return res.status(404).json({ error: "Business not found" });
+    }
+    const businessData = businessSnap.data();
+    const toEmail = businessData.emailNotifier;
+    if (!toEmail) {
+      return res.status(400).json({ error: "Business.emailNotifier not set" });
+    }
+
+    // --- 2) Load all feedback docs for this business ---
+    const feedbacksCol = collection(db, "business", businessId, "feedbacks");
+    const feedbackSnap = await getDocs(feedbacksCol);
+    const docs = feedbackSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+    // If no data, respond with message and no email sent
+    if (!docs.length) {
+      return res.status(200).json({
+        message: "No feedback documents to export",
+        exportedCount: 0,
+      });
+    }
+
+    // --- 3) Normalize documents: convert Timestamp to ISO, flatten if needed ---
+    const normalized = docs.map((d) => {
+      const out = {};
+      for (const key of Object.keys(d)) {
+        const val = d[key];
+        // Convert Firestore Timestamp to ISO string
+        if (val && typeof val.toMillis === "function") {
+          out[key] = new Date(val.toMillis()).toISOString();
+        } else {
+          out[key] = val;
+        }
+      }
+      return out;
+    });
+
+    // --- 4) Build CSV ---
+    const csv = buildCSV(normalized);
+    const filename = `feedbacks_${businessId}_${Date.now()}.csv`;
+
+    // --- 5) Get SMTP creds from env (or you can store them securely elsewhere)
+    // Example env vars:
+    // GMAIL_USER, GMAIL_PASS
+    // ZOHO_USER, ZOHO_PASS
+    const creds = (provider === "gmail")
+      ? { user: process.env.GMAIL_USER, pass: process.env.GMAIL_PASS, host: process.env.GMAIL_HOST, port: process.env.GMAIL_PORT, secure: process.env.GMAIL_SECURE === "true" }
+      : { user: process.env.ZOHO_USER, pass: process.env.ZOHO_PASS, host: process.env.ZOHO_HOST, port: process.env.ZOHO_PORT, secure: process.env.ZOHO_SECURE === "true" };
+
+    if (!creds.user || !creds.pass) {
+      return res.status(500).json({ error: `SMTP credentials for ${provider} are not set in environment` });
+    }
+
+    // --- 6) Create transporter & send email ---
+    const transporter = createTransporter(provider, creds);
+
+    // Use business email as from if you want (or use creds.user)
+    const fromEmail = creds.user; // safer to use authenticated user
+
+    const mailOptions = {
+      from: `"Feedback Export" <${fromEmail}>`,
+      to: toEmail, // one recipient from business.emailNotifier
+      subject: `Feedback export for business ${businessId}`,
+      text: `Attached is the CSV export of ${docs.length} feedback documents for business ${businessId}.`,
+      attachments: [
+        {
+          filename,
+          content: csv,
+        },
+      ],
+    };
+
+    // send email
+    const info = await transporter.sendMail(mailOptions);
+
+    // Return success with some meta
+    return res.status(200).json({
+      message: "Export created and email sent",
+      provider,
+      to: toEmail,
+      exportedCount: docs.length,
+      filename,
+      mailInfo: {
+        accepted: info.accepted,
+        rejected: info.rejected,
+        response: info.response,
+      },
+    });
+  } catch (err) {
+    console.error("Export error:", err);
+    return res.status(500).json({ error: err.message || String(err) });
   }
 });
 
