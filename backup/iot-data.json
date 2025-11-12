@@ -1,0 +1,58 @@
+{
+    "username": "suriya_Official",
+    "device": [
+        {
+            "status": false,
+            "deviceName": "light1",
+            "deviceId": "94fa2113-234e-41c5-9506-1b457bb96569"
+        },
+        {
+            "deviceName": "light2",
+            "deviceId": "96ae9835-1810-44f8-9087-265c9b8e2f5f",
+            "status": false
+        },
+        {
+            "deviceId": "916f0df8-841b-4b03-8e3f-f39183686803",
+            "status": false,
+            "deviceName": "light3"
+        },
+        {
+            "deviceName": "light4",
+            "status": false,
+            "deviceId": "ad9f807b-966e-435e-b4cb-009705a9bbe1"
+        },
+        {
+            "deviceName": "light5",
+            "deviceId": "8691812d-0629-43cf-b594-f274da6e6a64",
+            "status": true
+        }
+    ],
+    "hashedpassword": "$2b$10$CiNsw/3Cv1gyAgHb/Js5r.hbMcidIp4.It12eDj4jepJ0SN3Ype8e"
+}
+
+{
+    "status": 401,
+    "headers": {
+        "date": "Mon, 22 Apr 2024 11:09:16 GMT",
+        "content-type": "application/json",
+        "content-length": "154",
+        "connection": "close",
+        "x-rate-limit-group": "heavy",
+        "x-rate-limit-limit": "10",
+        "x-rate-limit-remaining": "9",
+        "x-rate-limit-window": "60",
+        "www-authenticate": "Bearer realm=\"RingCentral REST API\", error=\"invalid_token\", error_description=\"Token not found\"",
+        "content-language": "en",
+        "routingkey": "SJC01P17",
+        "rcrequestid": "c1dd31d2-0098-11ef-8fdf-005056bb95bf",
+        "cf-cache-status": "DYNAMIC",
+        "set-cookie": [
+            "__cf_bm=KTbvIvq7HSRGMTOciqH2qgyh1lvn3QvpTYwoCXYBt44-1713784156-1.0.1.1-vcBe9Bed_VsVB7zDS_85GeQOb_qL_aGO0vO5Oc4slurfamvfJlkNmdGpXTnAfBpJuGlm9lDEZAXMz.3Tz_NARQ; path=/; expires=Mon, 22-Apr-24 11:39:16 GMT; domain=.platform.ringcentral.com; HttpOnly; Secure"
+        ],
+        "server": "cloudflare",
+        "cf-ray": "8785291e0d202e38-BOM"
+    },
+    "response": "{\n  \"errorCode\" : \"TokenInvalid\",\n  \"message\" : \"Token not found\",\n  \"errors\" : [ {\n    \"errorCode\" : \"OAU-213\",\n    \"message\" : \"Token not found\"\n  } ]\n}",
+    "errorSource": "APP",
+    "attempts": 1
+}

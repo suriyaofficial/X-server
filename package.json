@@ -8,6 +8,7 @@
     "firebase": "^10.5.2",
     "firebase-admin": "^12.1.1",
     "google-auth-library": "^9.10.0",
+    "googleapis": "^166.0.0",
     "http-server": "^14.1.1",
     "jsonwebtoken": "^9.0.2",
     "nodemailer": "^6.10.1",
