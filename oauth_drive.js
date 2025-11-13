@@ -114,3 +114,4 @@ async function getOAuth2ClientForEmail(email) {
   return oauth2Client;
 }
 
+module.exports = { getOAuth2ClientForEmail, saveTokensLocal, getTokensLocal };

@@ -8,11 +8,11 @@ const { initializeApp } = require("firebase/app");
 const http = require("http");
 const app = express();
 const { google } = require("googleapis");
-const {  getFirestore,doc,getDoc,setDoc,collection,getDocs,updateDoc,query,where,orderBy,limit: fbLimit,getDocs: getDocsExtra,Timestamp,serverTimestamp,getCountFromServer,} = require("@firebase/firestore");
+const {  getFirestore,doc,getDoc,setDoc,collection,getDocs,updateDoc,query,where,orderBy,limit: fbLimit,getDocs: getDocsExtra,Timestamp,serverTimestamp,getCountFromServer,deleteDoc} = require("@firebase/firestore");
 const { buildCSV } = require("./createCSV");
-const { getData, setData } = require("./firebaseFunction");
+const { getData, setData,deleteData } = require("./firebaseFunction");
 const { createTransporter } = require("./transporter");
-const { getOAuth2ClientForEmail } = require("./oauth_drive");
+const { getOAuth2ClientForEmail,saveTokensLocal, } = require("./oauth_drive");
 const firebaseConfig = require("./feedback_firebaseconfig");
 const firebaseApp = initializeApp(firebaseConfig);
 const db = getFirestore(firebaseApp);
@@ -20,9 +20,6 @@ const server = http.createServer(app);
 app.use(cors()); // Enable CORS for all routes
 app.use(bodyParser.json());
 require("dotenv").config();
-
-console.log("env GOOGLE_CLIENT_ID:", process.env);
-
 
 const port = 3100;
 server.listen(port, () => {
@@ -183,11 +180,10 @@ app.delete("/feedback/admin/business/:businessId", async (req, res) => {
     );
     const updatedData = { ...existing, business: updatedList };
     await setData(db, "admin_list", email, updatedData);
-
+    await deleteData(db, "business", businessId);
     return res.status(200).json({
       message: "deleted successfully",
       deletedId: businessId,
-      remaining: updatedList.length,
     });
   } catch (error) {
     console.error(`🚀 path:/feedback/business DELETE :error`, error);
@@ -409,95 +405,136 @@ app.get("/feedback/admin/dashboard/:businessId/dashboard", async (req, res) => {
 
 // Save-to-drive endpoint using local token store + auto-refresh
 
-app.post("/feedback/admin/feedbacks/:businessId/save-to-drive",async (req, res) => {
-    try {
-      const { businessId } = req.params;
-      const { email } = req.body;
-      if (!email)
-        return res.status(400).json({ error: "email required in body" });
+app.post("/feedback/admin/feedbacks/:businessId/save-to-drive", async (req, res) => {
+  try {
+    const { businessId } = req.params;
+    const { email } = req.body;
 
-      let oauth2Client;
+    if (!email) {
+      return res.status(400).json({ error: "email required in body" });
+    }
+
+    // quick validation: ensure business exists and has emailNotifier (optional)
+    const businessRef = doc(db, "business", businessId);
+    const businessSnap = await getDoc(businessRef);
+    if (!businessSnap.exists()) {
+      return res.status(404).json({ error: "Business not found" });
+    }
+
+    // Respond immediately (job accepted)
+    res.status(202).json({
+      message: "Save-to-Drive job accepted. CSV will be created and saved to Drive shortly.",
+      businessId,
+    });
+
+    // Fire-and-forget worker (do not await)
+    (async () => {
       try {
-        oauth2Client = await getOAuth2ClientForEmail(email);
-      } catch (err) {
-        console.error("Token/refresh error:", err.message || err);
-        return res
-          .status(401)
-          .json({ error: "Re-auth required", detail: err.message });
-      }
+        // Fetch feedback docs
+        const feedbacksCol = collection(db, "business", businessId, "feedbacks");
+        const feedbackSnap = await getDocs(feedbacksCol);
+        const docs = feedbackSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
-      const drive = google.drive({ version: "v3", auth: oauth2Client });
+        if (!docs.length) {
+          console.log(
+            `[save-to-drive-job] No feedback docs for business ${businessId}. Nothing to upload.`
+          );
+          return;
+        }
 
-      const feedbacksCol = collection(db, "business", businessId, "feedbacks");
-      const feedbackSnap = await getDocs(feedbacksCol);
-      const docs = feedbackSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
-      if (!docs.length)
-        return res
-          .status(400)
-          .json({ error: "No feedback documents to export" });
-
-      const csv = buildCSV(
-        docs.map((d) => {
+        // Normalize dates and build CSV
+        const normalized = docs.map((d) => {
           const out = {};
-          for (const k of Object.keys(d)) {
-            const v = d[k];
-            if (v && typeof v.toMillis === "function")
-              out[k] = new Date(v.toMillis()).toISOString();
-            else out[k] = v;
+          for (const key of Object.keys(d)) {
+            const val = d[key];
+            if (val && typeof val.toMillis === "function") {
+              out[key] = new Date(val.toMillis()).toISOString();
+            } else {
+              out[key] = val;
+            }
           }
           return out;
-        })
-      );
-
-      const date = new Date();
-      const folderName = `${process.env.APP_NAME || "FeedbackApp"}`;
-      const foldersRes = await drive.files.list({
-        q: `mimeType='application/vnd.google-apps.folder' and name='${folderName}' and trashed = false`,
-        fields: "files(id, name)",
-        spaces: "drive",
-      });
-      let folderId;
-      if (foldersRes.data.files && foldersRes.data.files.length > 0) {
-        folderId = foldersRes.data.files[0].id;
-      } else {
-        const folderCreateRes = await drive.files.create({
-          resource: {
-            name: folderName,
-            mimeType: "application/vnd.google-apps.folder",
-          },
-          fields: "id",
         });
-        folderId = folderCreateRes.data.id;
+        const csv = buildCSV(normalized);
+
+        // Get OAuth2 client for the provided email (may throw if re-auth required)
+        let oauth2Client;
+        try {
+          oauth2Client = await getOAuth2ClientForEmail(email);
+        } catch (err) {
+          console.error(
+            `[save-to-drive-job] OAuth token/refresh failed for email ${email}:`,
+            err && err.message ? err.message : err
+          );
+          // Optionally: record this failure to DB / notify admin so user can re-auth
+          return;
+        }
+
+        const drive = google.drive({ version: "v3", auth: oauth2Client });
+
+        // Ensure folder exists (create if not)
+        const folderName = `${process.env.APP_NAME || "FeedbackApp"}`;
+        const foldersRes = await drive.files.list({
+          q: `mimeType='application/vnd.google-apps.folder' and name='${folderName.replace(/'/g, "\\'")}' and trashed = false`,
+          fields: "files(id, name)",
+          spaces: "drive",
+        });
+
+        let folderId;
+        if (foldersRes.data.files && foldersRes.data.files.length > 0) {
+          folderId = foldersRes.data.files[0].id;
+        } else {
+          const folderCreateRes = await drive.files.create({
+            resource: {
+              name: folderName,
+              mimeType: "application/vnd.google-apps.folder",
+            },
+            fields: "id",
+          });
+          folderId = folderCreateRes.data.id;
+        }
+
+        // Upload as Google Sheet (Drive will import CSV)
+        const fileMetadata = {
+          name: `feedbacks_${businessId}_${Date.now()}.csv`,
+          parents: [folderId],
+          mimeType: "application/vnd.google-apps.spreadsheet",
+        };
+        const media = {
+          mimeType: "text/csv",
+          body: stream.Readable.from([csv]),
+        };
+
+        const fileRes = await drive.files.create({
+          resource: fileMetadata,
+          media,
+          fields: "id, name, webViewLink",
+        });
+
+        console.log(
+          `[save-to-drive-job] Saved feedbacks for business ${businessId} to Drive. id=${fileRes.data.id} link=${fileRes.data.webViewLink}`
+        );
+
+        // Optionally: you could update a Firestore doc with sheetId/sheetLink for UI later
+        // await updateDoc(doc(db, 'business', businessId), { lastExportSheetId: fileRes.data.id, lastExportSheetLink: fileRes.data.webViewLink });
+
+      } catch (innerErr) {
+        console.error(
+          `[save-to-drive-job] Error processing save-to-drive for business ${businessId}:`,
+          innerErr
+        );
+        // Optional: push this failure into a persistent queue (Firestore / PubSub) for retries
       }
+    })();
 
-      const fileMetadata = {
-        name: `feedbacks_${businessId}_${Date.now()}.csv`,
-        parents: [folderId],
-        mimeType: "application/vnd.google-apps.spreadsheet",
-      };
-
-      const media = {
-        mimeType: "text/csv",
-        body: stream.Readable.from([csv]),
-      };
-
-      const fileRes = await drive.files.create({
-        resource: fileMetadata,
-        media,
-        fields: "id, name, webViewLink",
-      });
-
-      return res.status(200).json({
-        message: "Saved to Drive (Google Sheet)",
-        sheetId: fileRes.data.id,
-        sheetLink: fileRes.data.webViewLink,
-      });
-    } catch (err) {
-      console.error("save-to-drive error:", err);
-      return res.status(500).json({ error: err.message || String(err) });
-    }
+    // immediate response already sent
+    return;
+  } catch (err) {
+    console.error("save-to-drive immediate validation error:", err);
+    return res.status(500).json({ error: err.message || String(err) });
   }
-);
+});
+
 
 app.get("/feedback/admin/feedbacks/:businessId/export", async (req, res) => {
   try {

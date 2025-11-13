@@ -27,3 +27,4 @@ function createTransporter(provider, creds) {
   }
   throw new Error("Unsupported provider: " + provider);
 }
+module.exports = { createTransporter };

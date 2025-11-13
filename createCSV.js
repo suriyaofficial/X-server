@@ -30,3 +30,4 @@ function buildCSV(rows) {
   );
   return [header, ...lines].join("\n");
 }
+module.exports = { buildCSV };
