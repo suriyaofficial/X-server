@@ -119,6 +119,42 @@ app.get("/scuba/:sku", async (req, res) => {
   }
 });
 
+app.get("/quote/:code", async (req, res) => {
+  const code = req.params.code;
+  const usersCollectionRef = collection(db, "dive_hrzn_shortlinks");
+  const userDocRef = doc(usersCollectionRef, code);
+  const snap = await getDoc(userDocRef);
+  if (!snap.exists()) {
+    return res
+      .status(404)
+      .json({ status: "Not Found", message: "scuba document not found" });
+  }
+  const data = snap.data();
+  return res.redirect(data.longUrl);
+});
+
+function generateShortCode(length = 6) {
+  const chars =
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  let code = "";
+  for (let i = 0; i < length; i++) {
+    code += chars[Math.floor(Math.random() * chars.length)];
+  }
+  return code;
+}
+
+app.post("/api/create-short-url", async (req, res) => {
+  const { longUrl } = req.body;
+  const data = req.body;
+  const code = generateShortCode();
+  const usersCollectionRef = collection(db, "dive_hrzn_shortlinks");
+  const userDocRef = doc(usersCollectionRef, code);
+  await setDoc(userDocRef, data);
+  res.json({
+    shortUrl: `http://localhost:3100/quote/${code}`,
+  });
+});
+
 app.use((req, res, next) => {
   res.header("Access-Control-Allow-Origin", "*");
   res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE");
