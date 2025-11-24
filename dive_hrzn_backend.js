@@ -151,7 +151,7 @@ app.post("/api/create-short-url", async (req, res) => {
   const userDocRef = doc(usersCollectionRef, code);
   await setDoc(userDocRef, data);
   res.json({
-    shortUrl: `http://localhost:3100/quote/${code}`,
+    shortUrl: `https://server-ag3p.onrender.com/quote/${code}`,
   });
 });
 
