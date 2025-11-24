@@ -34,22 +34,50 @@ app.get("/", function (req, res) {
   console.log("🚀-*-*-*server refresh -*-*-*🚀");
   res.sendFile(fileName, option);
 });
-app.get("/scuba", async (req, res) => {
-  try {
-    // read file and parse JSON
-    const raw = await fs.readFile(SCUBA_JSON_PATH, "utf8");
-    const data = JSON.parse(raw);
 
-    res.status(200).json(data);
-  } catch (error) {
-    console.error(`🚀 path:/scuba error`, error);
-    // if file not found, return helpful message
-    if (error.code === "ENOENT") {
-      return res.status(404).json({ status: "Not Found", message: "scuba.json not found on server." });
+// --- POST /scuba (write request body to Firestore at collection "content", doc "scuba") ---
+app.post("/scuba", async (req, res) => {
+  try {
+    const data = req.body;
+    if (!data || Object.keys(data).length === 0) {
+      return res.status(400).json({ status: "Bad Request", message: "Request body is empty" });
     }
-    res.status(500).json({ status: "Internal Server Error", message: error.message || error });
+
+    const usersCollectionRef = collection(db, "dive_hrzn");
+    const userDocRef = doc(usersCollectionRef, "scuba");
+
+    // Option A: overwrite the document
+    await setDoc(userDocRef, data);
+
+    // Option B (if you prefer to merge instead of overwrite):
+    // await setDoc(userDocRef, data, { merge: true });
+
+    return res.status(201).json({ status: "OK", message: "scuba data saved", id: "scuba" });
+  } catch (error) {
+    console.error("POST /scuba error:", error);
+    return res.status(500).json({ status: "Internal Server Error", message: error.message || error });
   }
 });
+
+// --- GET /scuba (read the document content/scuba from Firestore) ---
+app.get("/scuba", async (req, res) => {
+  try {
+    const usersCollectionRef = collection(db, "dive_hrzn");
+    const userDocRef = doc(usersCollectionRef, "scuba");
+
+    const snap = await getDoc(userDocRef);
+    if (!snap.exists()) {
+      return res.status(404).json({ status: "Not Found", message: "scuba document not found" });
+    }
+
+    const data = snap.data();
+    return res.status(200).json(data);
+  } catch (error) {
+    console.error("GET /scuba error:", error);
+    return res.status(500).json({ status: "Internal Server Error", message: error.message || error });
+  }
+});
+
 app.use((req, res, next) => {
   res.header("Access-Control-Allow-Origin", "*");
   res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE");
