@@ -1,0 +1,196 @@
+{
+    "page_name": "scuba diving",
+    "banners": [
+      "https://example.com/banner.jpg",
+      "https://example.com/banner2.jpg"
+    ],
+    "category": ["TRIPS", "EXPERIENCE", "COURSES", "CERTIFIED DIVERS"],
+    "list": [
+      {
+        "category_name": "EXPERIENCE",
+        "list": [
+          {
+            "title": "DSD-Discover Scuba Diving",
+            "SKU": "SCUBA-EXP-DSD",
+            "photos": [
+              "https://example.com/photo1.jpg",
+              "https://example.com/photo2.jpg"
+            ],
+            "status": "available"
+          },
+          {
+            "title":"birthday celebration dive",
+            "SKU":"SCUBA-EXP-BDAY",
+            "photos": [
+              "https://example.com/photo1.jpg",
+              "https://example.com/photo2.jpg"
+            ],
+            "status": "not available"
+          }
+        ]
+      },
+      {
+        "category_name": "COURSES",
+        "list": [
+          {
+            "title": "Open Water Diver Course",
+            "SKU": "SCUBA-CRS-OWD",
+            "photos": [
+              "https://example.com/photo3.jpg",
+              "https://example.com/photo4.jpg"
+            ],
+            "status": "available"
+          },
+          {
+            "title": "Advanced Open Water Diver Course",
+            "SKU": "SCUBA-CRS-AOWD",
+            "photos": [
+              "https://example.com/photo5.jpg",
+              "https://example.com/photo6.jpg"
+            ],
+            "status": "coming soon"
+          },
+          {
+            "title": "OW + ADOW Combo Course",
+            "SKU": "SCUBA-CRS-OW-AOW",
+            "photos": [
+              "https://example.com/photo19.jpg",
+              "https://example.com/photo20.jpg"
+            ],
+            "status": "available"
+          },
+          {
+            "title": "Nitrox Diver Course",
+            "SKU": "SCUBA-CRS-NITROX",
+            "photos": [
+              "https://example.com/photo17.jpg",
+              "https://example.com/photo18.jpg"
+            ],
+            "status": "available"
+          },
+
+          {
+            "title": "Deep Diver Specialty Course",
+            "SKU": "SCUBA-CRS-DEEP",
+            "photos": [
+              "https://example.com/photo21.jpg",
+              "https://example.com/photo22.jpg"
+            ],
+            "status": "available"
+          },
+          {
+            "title": "Emergency First Response Course",
+            "SKU": "SCUBA-CRS-EFR",
+            "photos": [
+              "https://example.com/photo15.jpg",
+              "https://example.com/photo16.jpg"
+            ],
+            "status": "available"
+          },
+          {
+            "title": "Rescue Diver Course",
+            "SKU": "SCUBA-CRS-RD",
+            "photos": [
+              "https://example.com/photo7.jpg",
+              "https://example.com/photo8.jpg"
+            ],
+            "status": "available"
+          },
+          {
+            "title": "EFR + Rescue Combo Course",
+            "SKU": "SCUBA-CRS-EFR-RD-COMBO",
+            "photos": [
+              "https://example.com/photo27.jpg",
+              "https://example.com/photo28.jpg"
+            ],
+            "status": "available"
+          },
+          {
+            "title": "Divemaster Course",
+            "SKU": "SCUBA-CRS-DM",
+            "photos": [
+              "https://example.com/photo9.jpg",
+              "https://example.com/photo10.jpg"
+            ],
+            "status": "available"
+          },
+          {
+            "title": "Zero to Hero (OW to DM)",
+            "SKU": "SCUBA-CRS-ZERO2HERO",
+            "photos": [
+              "https://example.com/photo23.jpg",
+              "https://example.com/photo24.jpg"
+            ],
+            "status": "available"
+          },
+          {
+            "title": "Instructor Development Course",
+            "SKU": "SCUBA-CRS-IDC",
+            "photos": [
+              "https://example.com/photo11.jpg",
+              "https://example.com/photo12.jpg"
+            ],
+            "status": "coming soon"
+          },
+          {
+            "title": "Specialty Diver Courses",
+            "SKU": "SCUBA-CRS-SPC",
+            "photos": [
+              "https://example.com/photo13.jpg",
+              "https://example.com/photo14.jpg"
+            ],
+            "status": "available"
+          },
+
+          {
+            "title": "Tec Diver Courses (Tec 40 to Full Range)",
+            "SKU": "SCUBA-CRS-TEC",
+            "photos": [
+              "https://example.com/photo25.jpg",
+              "https://example.com/photo26.jpg"
+            ],
+            "status": "coming soon"
+          }
+        ]
+      },
+      {
+        "category_name": "CERTIFIED DIVERS",
+        "list": [
+          {
+            "title": "Fun Dive",
+            "SKU": "SCUBA-CD-FD",
+            "photos": [
+              "https://example.com/photo29.jpg",
+              "https://example.com/photo30.jpg"
+            ],
+            "status": "available"
+          }
+          
+        ]
+      },
+      {
+        "category_name": "TRIPS",
+        "list": [
+          {
+            "title": "Scuba Diving Liveaboard Trip",
+            "SKU": "SCUBA-TRIP-LIVEABOARD",
+            "photos": [
+              "https://example.com/photo31.jpg",
+              "https://example.com/photo32.jpg"
+            ],
+            "status": "sold out"
+          },
+          {
+            "title":"Lakshadweep Scuba Diving Trip",
+            "SKU":"SCUBA-TRIP-LAKSHADWEEP",
+            "photos": [
+              "https://example.com/photo31.jpg",
+              "https://example.com/photo32.jpg"
+            ],
+            "status": "coming soon"
+          }
+        ]
+      }
+
+    ]
+  }
