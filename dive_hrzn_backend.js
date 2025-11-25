@@ -25,6 +25,11 @@ const {
   serverTimestamp,
   getCountFromServer,
   deleteDoc,
+  arrayUnion,
+
+  limit: fsLimit,
+
+  startAfter,
 } = require("@firebase/firestore");
 const { buildCSV } = require("./createCSV");
 const { getData, setData, deleteData } = require("./firebaseFunction");
@@ -40,11 +45,20 @@ require("dotenv").config();
 const fs = require("fs").promises; // at top of file with other requires
 const DATA_DIR = path.join(__dirname, "data");
 const SCUBA_JSON_PATH = path.join(DATA_DIR, "scuba.json");
+const TelegramBot = require("node-telegram-bot-api");
 const port = 3100;
 server.listen(port, () => {
   console.log(`🚀 Server is running on http://localhost:${port}`);
 });
-const axios = require("axios");
+// import/initialize db and generateShortCode as you already have
+
+// Init Telegram bot (no polling needed if only sending messages)
+const BOT_TOKEN = process.env.BOT_TOKEN;
+if (!BOT_TOKEN) {
+  throw new Error("Missing BOT_TOKEN in environment");
+}
+const bot = new TelegramBot(BOT_TOKEN, { polling: false });
+
 app.get("/", function (req, res) {
   let option = { root: path.join(__dirname) };
   let fileName = "index.html";
@@ -196,63 +210,461 @@ app.post("/api/create-short-url", async (req, res) => {
   });
 });
 
+// Helper: escape text for MarkdownV2
+function escapeMarkdownV2(text = "") {
+  return String(text).replace(/([_\*\[\]\(\)~`>#+\-=|{}\.!\\])/g, "\\$1");
+}
+
 app.post("/scuba/booking/request", async (req, res) => {
   try {
-    // const data = req.body;
-    const data = {
-      name: 'suriya',
-      phone: '+917092925555',
-      email: 'suriyaboss1@gmail.com',
+    const body = req.body || {};
+
+    let data = {
+      name: body.name,
+      email: body.email,
+      phoneNo: body.phoneNo,
+      title: body.title,
+      sku: body.sku,
+      initiatedDate:
+        body.initiatedDate || new Date().toISOString().split("T")[0],
+      preferredDate: "",
+      groupSize: 0,
+      knowSwimming: "",
+      status: "Created",
+      paymentStatus: "",
+      createdAt: serverTimestamp(),
     };
 
-    const code = generateShortCode(10);
-    const usersCollectionRef = collection(db, "dive_hrzn_enquiries");
-    const userDocRef = doc(usersCollectionRef, code);
+    if (!data.name) return res.status(400).json({ error: "name required" });
+    if (!data.phoneNo)
+      return res.status(400).json({ error: "whatsapp number required" });
 
-    await setDoc(userDocRef, data);
+    const enquiriesCollectionRef = collection(db, "dive_hrzn_enquiries");
 
-    // Telegram
-    const BOT_TOKEN = "8548958946:AAEKVVu-SbXwfOK1cQe1G5r5Nd-sLMEonVI";
-    const CHAT_ID = "5225155056";
+    // 🔥 THIS reads only 1 aggregation result, NOT all docs
+    const snapshot = await getCountFromServer(enquiriesCollectionRef);
+    const count = snapshot.data().count;
 
-    // Creative WhatsApp text
-    const whatsappText = encodeURIComponent(
-      "🌊 Hey! You just reached the underwater world. Our dive team will get back to you shortly 🤿✨"
-    );
+    // Generate next ENQ number
+    const nextNumber = String(count + 1).padStart(3, "0");
+    const code = `ENQ-${nextNumber}`;
+    data.enqNo = code;
+    const enquiriesDocRef = doc(enquiriesCollectionRef, code);
+    await setDoc(enquiriesDocRef, data);
+    const usersDocRef = doc(db, "dive_hrzn_users", body.email);
+    await updateDoc(usersDocRef, {
+      enquiries: arrayUnion(code),
+    });
+    const phoneDigits = data.phoneNo.replace(/\D+/g, "");
+    const whatsappText =
+      "🌊 Hey! You just reached the underwater world. Our dive team will get back to you shortly 🤿✨";
 
-    const whatsappURL = `https://wa.me/${data.phone}?text=${whatsappText}`;
+    const whatsappURL = `https://wa.me/${phoneDigits}?text=${encodeURIComponent(
+      whatsappText
+    )}`;
 
-    const message = `
-📩 *New Scuba Booking Request*
-------------------------------------
-🆔 *Code:* ${code}
+    const nameEsc = escapeMarkdownV2(data.name || "N/A");
+    const phoneEsc = escapeMarkdownV2(data.phoneNo || "N/A");
+    const emailEsc = escapeMarkdownV2(data.email || "N/A");
+    const serviceEsc = escapeMarkdownV2(data.title || "N/A");
+    const skuEsc = escapeMarkdownV2(data.sku || "N/A");
+    const initiatedEsc = escapeMarkdownV2(data.initiatedDate || "N/A");
+    const codeEsc = escapeMarkdownV2(code);
 
-👤 *Name:* ${data.name || "N/A"}
-📱 *Phone:* ${data.phone || "N/A"}
-📧 *Email:* ${data.email || "N/A"}
-------------------------------------
-    `;
+    const sep = "\\-".repeat(36);
 
-    await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-      chat_id: CHAT_ID,
-      text: message,
-      parse_mode: "Markdown",
-      reply_markup: {
-        inline_keyboard: [
-          [
-            {
-              text: "💬 WhatsApp Customer",
-              url: whatsappURL,
-            },
-          ],
-        ],
-      },
+    const message = [
+      "📩 *New Scuba Booking Request*",
+      sep,
+      `🆔 ${codeEsc}`,
+      "",
+      `👤 *Name:* ${nameEsc}`,
+      `📱 *WhatsApp:* ${phoneEsc}`,
+      `📧 *Email:* ${emailEsc}`,
+      `🏷️ *Service:* ${serviceEsc}`,
+      `🔖 *SKU:* ${skuEsc}`,
+      `📅 *Initiated:* ${initiatedEsc}`,
+      sep,
+      `Status: *${escapeMarkdownV2(data.status)}*`,
+    ].join("\n");
+
+    const rawChatIds = process.env.CHAT_ID;
+    const chatIds = rawChatIds
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    if (chatIds.length === 0) {
+      console.error("No CHAT_ID configured");
+      return res
+        .status(500)
+        .json({ error: "Server misconfigured (CHAT_ID missing)" });
+    }
+
+    const promises = chatIds.map(async (chatId) => {
+      try {
+        return await bot.sendMessage(chatId, message, {
+          parse_mode: "MarkdownV2",
+          reply_markup: {
+            inline_keyboard: [
+              [
+                {
+                  text: "💬 WhatsApp Customer",
+                  url: whatsappURL,
+                },
+                // Optional: add a quick "Mark In Progress" callback button if you want later
+                // { text: "🔁 Mark In Progress", callback_data: `mark:${code}:in_progress` }
+              ],
+            ],
+          },
+        });
+      } catch (err) {
+        console.error(
+          "Telegram send error for chatId",
+          chatId,
+          err?.response || err
+        );
+        return null;
+      }
     });
 
-    res.status(201).json({ success: true, code, saved: data });
+    await Promise.all(promises);
+
+    return res.status(201).json({
+      success: true,
+      code,
+      saved: data,
+      telegramSentTo: chatIds.length,
+    });
   } catch (err) {
-    console.error("Error:", err);
-    res.status(500).json({ error: "Something went wrong" });
+    console.error("Error in /scuba/booking/request:", err);
+    return res.status(500).json({ error: "Something went wrong" });
+  }
+});
+
+app.post("/auth/google-login", async (req, res) => {
+  try {
+    const { email, firstName, lastName, profileImage } = req.body;
+    const existing = await getData(db, "dive_hrzn_users", email);
+    if (existing) {
+      console.log(`🚀-*-*-* ${email} logged_In -*-*-*🚀`);
+      res.status(200).json({ message: "logged_In", data: existing });
+    } else {
+      const usersCollectionRef = collection(db, "dive_hrzn_users");
+      const userDocRef = doc(usersCollectionRef, email);
+      await setDoc(userDocRef, {
+        email,
+        firstName,
+        lastName,
+        profileImage,
+      });
+
+      res.status(201).json({
+        result: "user registered Successfully",
+        data: {
+          email,
+          firstName,
+          lastName,
+          profileImage,
+          phoneNo: null,
+        },
+      });
+    }
+  } catch (error) {
+    console.error(`🚀path:/login :error ${error}`);
+    res.status(500).json({ status: "Internal Server Error", message: error });
+  }
+});
+app.post("/auth/update-phone", async (req, res) => {
+  try {
+    const { email, phoneNo } = req.body;
+    const existing = await getData(db, "dive_hrzn_users", email);
+    const usersDocRef = doc(db, "dive_hrzn_users", email);
+    let data = await updateDoc(usersDocRef, {
+      phoneNo: phoneNo,
+    });
+    res.status(201).json({
+      result: "user registered Successfully",
+      data: data,
+    });
+  } catch (error) {
+    console.error(`🚀path:/login :error ${error}`);
+    res.status(500).json({ status: "Internal Server Error", message: error });
+  }
+});
+
+// app.get("/scuba/enquiries/all", async (req, res) => {
+//   try {
+//     const colRef = collection(db, "dive_hrzn_enquiries");
+
+//     const snapshot = await getDocs(colRef);
+
+//     const enquiries = snapshot.docs.map((doc) => ({
+//       id: doc.id,
+//       ...doc.data(),
+//     }));
+
+//     return res.status(200).json({
+//       success: true,
+//       total: enquiries.length,
+//       enquiries,
+//     });
+//   } catch (err) {
+//     console.error("Error fetching enquiries:", err);
+//     return res.status(500).json({ error: "Something went wrong" });
+//   }
+// });
+
+/**
+ * GET /scuba/enquiries/all
+ *
+ * Query params:
+ *  - skus             (comma separated) e.g. skus=SCUBA-EXP-DSD,SCUBA-EXP-BDAY
+ *  - paymentStatuses  (comma separated)
+ *  - statuses         (comma separated)
+ *  - dateFrom         (YYYY-MM-DD or ISO)  (inclusive)
+ *  - dateTo           (YYYY-MM-DD or ISO)  (inclusive)
+ *  - today=true       (if present, overrides dateFrom/dateTo to today's range in server timezone)
+ *  - q                (search exact phone or email)
+ *  - pageSize         (number, default 50, max 200)
+ *  - pageToken        (doc id of last item from previous page)
+ *  - sortDir          asc | desc  (default desc)
+ */
+function toArrayParam(value) {
+  if (!value) return null;
+  if (Array.isArray(value)) return value.map(String);
+  return String(value)
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function parseDateParam(val) {
+  if (!val) return null;
+  // Accept YYYY-MM-DD or full ISO; create Date object at start of day (00:00) for from, and end for to handled by caller
+  const d = new Date(val);
+  if (isNaN(d.getTime())) return null;
+  return d;
+}
+
+app.get("/scuba/enquiries/all", async (req, res) => {
+  try {
+    const {
+      skus,
+      paymentStatuses,
+      statuses,
+      dateFrom,
+      dateTo,
+      today,
+      q,
+      pageSize = 50,
+      pageToken,
+      sortDir = "desc",
+      deal,
+    } = req.query || {};
+
+    const skusArr = toArrayParam(skus);
+    const payArr = toArrayParam(paymentStatuses);
+    const statusArr = toArrayParam(statuses);
+    const dealArr = toArrayParam(deal);
+
+    // Build base collection ref
+    const colRef = collection(db, "dive_hrzn_enquiries");
+
+    // We'll collect where filters in an array and apply them to the query progressively.
+    const filters = [];
+    let usedIn = false;
+
+    // Helper to attach equality vs in
+    const attachFilter = (arr, field) => {
+      if (!arr || arr.length === 0) return;
+      if (arr.length === 1) {
+        filters.push([field, "==", arr[0]]);
+      } else if (!usedIn && arr.length <= 10) {
+        filters.push([field, "in", arr]);
+        usedIn = true;
+      } else {
+        throw new Error(`Too many values for '${field}' (max 10 for 'in')`);
+      }
+    };
+
+    attachFilter(skusArr, "sku");
+    attachFilter(payArr, "paymentStatus");
+    attachFilter(statusArr, "status");
+    attachFilter(dealArr, "deal");
+
+    // Date range handling (assumes createdAt is Firestore Timestamp)
+    let fromTs = null;
+    let toTs = null;
+
+    if (
+      today !== undefined &&
+      (today === "true" || today === "1" || today === "True")
+    ) {
+      // Today's range in server timezone
+      const now = new Date();
+      const y = now.getFullYear(),
+        m = now.getMonth(),
+        d = now.getDate();
+      const start = new Date(Date.UTC(y, m, d, 0, 0, 0)); // midnight UTC of that local day may be off if you want local timezone
+      // If you need local timezone calculation, replace above with timezone-aware logic.
+      fromTs = Timestamp.fromDate(start);
+      const end = new Date(Date.UTC(y, m, d, 23, 59, 59, 999));
+      toTs = Timestamp.fromDate(end);
+    } else {
+      const df = parseDateParam(dateFrom);
+      const dt = parseDateParam(dateTo);
+      if (df) {
+        // start of day (00:00:00)
+        const s = new Date(
+          df.getFullYear(),
+          df.getMonth(),
+          df.getDate(),
+          0,
+          0,
+          0,
+          0
+        );
+        fromTs = Timestamp.fromDate(s);
+      }
+      if (dt) {
+        // end of day (23:59:59.999)
+        const e = new Date(
+          dt.getFullYear(),
+          dt.getMonth(),
+          dt.getDate(),
+          23,
+          59,
+          59,
+          999
+        );
+        toTs = Timestamp.fromDate(e);
+      }
+    }
+
+    if (fromTs && toTs) {
+      filters.push(["createdAt", ">=", fromTs]);
+      filters.push(["createdAt", "<=", toTs]);
+    } else if (fromTs) {
+      filters.push(["createdAt", ">=", fromTs]);
+    } else if (toTs) {
+      filters.push(["createdAt", "<=", toTs]);
+    }
+
+    // Search exact phone/email (if provided). We'll run these as separate queries if q is present.
+    if (q) {
+        // try phone exact first then email
+        const phoneQuery = query(
+          colRef,
+          where("phoneNo", "==", q),
+          orderBy("createdAt", sortDir === "asc" ? "asc" : "desc"),
+          fsLimit(Math.min(Number(pageSize) || 50, 200))
+        );
+        const snapPhone = await getDocs(phoneQuery);
+        if (!snapPhone.empty) {
+          const docs = snapPhone.docs.map((d) => ({ id: d.id, ...d.data() }));
+          return res.json({
+            success: true,
+            total: docs.length,
+            enquiries: docs,
+            nextPageToken:
+              docs.length === Math.min(Number(pageSize) || 50, 200)
+                ? docs[docs.length - 1].id
+                : null,
+          });
+        }
+        // fallback to email exact
+        const emailQuery = query(
+          colRef,
+          where("email", "==", q),
+          orderBy("createdAt", sortDir === "asc" ? "asc" : "desc"),
+          fsLimit(Math.min(Number(pageSize) || 50, 200))
+        );
+        const snapEmail = await getDocs(emailQuery);
+        const docs = snapEmail.docs.map((d) => ({ id: d.id, ...d.data() }));
+        return res.json({
+          success: true,
+          total: docs.length,
+          enquiries: docs,
+          nextPageToken:
+            docs.length === Math.min(Number(pageSize) || 50, 200)
+              ? docs[docs.length - 1].id
+              : null,
+        });
+    }
+
+    // Build the main query progressively
+    let qref = colRef;
+    for (const f of filters) {
+      const [field, op, val] = f;
+      qref = query(qref, where(field, op, val));
+    }
+
+    // Order by createdAt (required when using range filters on createdAt)
+    const dir = sortDir === "asc" ? "asc" : "desc";
+    qref = query(qref, orderBy("createdAt", dir));
+
+    // Handle cursor-based pagination via pageToken (doc id)
+    const limitNum = Math.min(Number(pageSize) || 50, 200);
+    qref = query(qref, fsLimit(limitNum));
+
+    if (pageToken) {
+      // try to fetch the doc and startAfter it
+      const cursorRef = doc(db, "dive_hrzn_enquiries", pageToken);
+      const cursorSnap = await getDoc(cursorRef);
+      if (cursorSnap.exists()) {
+        qref = query(qref, startAfter(cursorSnap));
+      } // if invalid token, we ignore
+    }
+
+    const snap = await getDocs(qref);
+    const enquiries = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    const nextPageToken =
+      enquiries.length === limitNum ? enquiries[enquiries.length - 1].id : null;
+
+    return res.json({
+      success: true,
+      total: enquiries.length,
+      nextPageToken,
+      enquiries,
+    });
+  } catch (err) {
+    console.error("enquiries/all error:", err);
+    return res
+      .status(500)
+      .json({ error: "Something went wrong", details: err.message });
+  }
+});
+
+app.get("/temp/fix-createdAt", async (req, res) => {
+  try {
+    const updates = [];
+
+    for (let i = 1; i <= 19; i++) {
+      const num = String(i).padStart(3, "0"); // 001 ... 019
+      const id = `ENQ-${num}`;
+
+      const ref = doc(db, "dive_hrzn_enquiries", id);
+
+      updates.push(
+        updateDoc(ref, {
+          deal: "open",
+        }).catch((err) => {
+          console.error(`Failed updating ${id}`, err.code);
+          return null;
+        })
+      );
+    }
+
+    await Promise.all(updates);
+
+    return res.json({
+      success: true,
+      message: "Updated createdAt for ENQ-001 to ENQ-019",
+    });
+  } catch (err) {
+    console.error("TEMP FIX ERROR:", err);
+    return res.status(500).json({ error: "Something went wrong" });
   }
 });
 
