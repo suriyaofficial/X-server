@@ -61,7 +61,8 @@ const bot = new TelegramBot(BOT_TOKEN, { polling: false });
 const BASE_URL = process.env.BASE_URL || "https://server-ag3p.onrender.com";
 
 // Matches both CInvoiceID and CEstimateID Zoho links
-const ZOHO_LINK_REGEX = /^https:\/\/zohoinvoicepay\.in\/invoice\/scuba\/secure\?(CInvoiceID|CEstimateID)=[A-Za-z0-9-]+$/;
+const ZOHO_LINK_REGEX =
+  /^https:\/\/zohoinvoicepay\.in\/invoice\/scuba\/secure\?(CInvoiceID|CEstimateID)=[A-Za-z0-9-]+$/;
 app.get("/", function (req, res) {
   let option = { root: path.join(__dirname) };
   let fileName = "index.html";
@@ -100,7 +101,7 @@ app.post("/scuba", async (req, res) => {
   }
 });
 
-app.post("/scuba/:sku", async (req, res) => {
+app.post("/sku/details/:sku", async (req, res) => {
   try {
     const { sku } = req.params;
     const data = req.body;
@@ -153,7 +154,7 @@ app.get("/scuba", async (req, res) => {
     });
   }
 });
-app.get("/scuba/:sku", async (req, res) => {
+app.get("/sku/details/:sku", async (req, res) => {
   try {
     const { sku } = req.params;
     const usersCollectionRef = collection(db, "dive_hrzn_SKU");
@@ -214,7 +215,7 @@ async function createZohoShortlink(enqId, link) {
   const kind = idType === "CInvoiceID" ? "invoice" : "quote";
   const data = {
     enqId,
-    kind,              // "invoice" | "quote"
+    kind, // "invoice" | "quote"
     link: trimmed,
     active: true,
     createdAt: new Date().toISOString(),
@@ -231,12 +232,12 @@ function escapeMarkdownV2(text = "") {
   return String(text).replace(/([_\*\[\]\(\)~`>#+\-=|{}\.!\\])/g, "\\$1");
 }
 
-app.post("/scuba/enquiries/request", async (req, res) => {
+app.post("/enquiries/request", async (req, res) => {
   try {
     const body = req.body || {};
-    console.log("🚀 ~ body:", body)
-    console.log("🚀 ~ body:", body)
-    console.log("🚀 ~ body:", body)
+    console.log("🚀 ~ body:", body);
+    console.log("🚀 ~ body:", body);
+    console.log("🚀 ~ body:", body);
 
     let data = {
       name: body.name,
@@ -252,7 +253,6 @@ app.post("/scuba/enquiries/request", async (req, res) => {
       status: "Created",
       paymentStatus: "",
       createdAt: serverTimestamp(),
-      knowSwimming: false,
       preferredDate: null, // keep empty for now, will store timestamp later
       link: "",
       deal: "open",
@@ -355,7 +355,7 @@ app.post("/scuba/enquiries/request", async (req, res) => {
 
     return res.status(201).json({
       success: true,
-      code,
+      enquiryId:code,
       saved: data,
       telegramSentTo: chatIds.length,
     });
@@ -364,10 +364,10 @@ app.post("/scuba/enquiries/request", async (req, res) => {
     return res.status(500).json({ error: "Something went wrong" });
   }
 });
-app.post("/scuba/enquiries/update/:enqId", async (req, res) => {
+app.post("/enquiries/update/:enqId", async (req, res) => {
   try {
     const body = req.body || {};
-    console.log("🚀 ~ body:", body)
+    console.log("🚀 ~ body:", body);
     const enqId = req.params.enqId || {};
     const ref = doc(db, "dive_hrzn_enquiries", enqId);
     if (body?.link) {
@@ -392,6 +392,79 @@ app.post("/scuba/enquiries/update/:enqId", async (req, res) => {
     return res.status(500).json({ error: "Something went wrong" });
   }
 });
+app.get("/all/enquiries", async (req, res) => {
+  try {
+    const { deal, q, id } = req.query || {};
+    const colRef = collection(db, "dive_hrzn_enquiries");
+
+    // 1️⃣ If "id" is provided: get that single document by ID
+    if (id) {
+      const docRef = doc(db, "dive_hrzn_enquiries", id);
+      const snap = await getDoc(docRef);
+
+      const enquiries = snap.exists() ? [{ id: snap.id, ...snap.data() }] : [];
+
+      return res.json({
+        success: true,
+        total: enquiries.length,
+        enquiries, // always an array
+      });
+    }
+
+    // 2️⃣ If "q" is provided: search by email only
+    if (q) {
+      const qRef = query(colRef, where("email", "==", q));
+      const snap = await getDocs(qRef);
+
+      const enquiries = snap.docs.map((d) => ({
+        id: d.id,
+        ...d.data(),
+      }));
+
+      return res.json({
+        success: true,
+        total: enquiries.length,
+        enquiries,
+      });
+    }
+
+    // 3️⃣ If "deal" is provided: filter by deal
+    if (deal) {
+      const qRef = query(colRef, where("deal", "==", deal));
+      const snap = await getDocs(qRef);
+
+      const enquiries = snap.docs.map((d) => ({
+        id: d.id,
+        ...d.data(),
+      }));
+
+      return res.json({
+        success: true,
+        total: enquiries.length,
+        enquiries,
+      });
+    }
+
+    // 4️⃣ No params: return ALL documents in the collection
+    const snap = await getDocs(colRef);
+    const enquiries = snap.docs.map((d) => ({
+      id: d.id,
+      ...d.data(),
+    }));
+
+    return res.json({
+      success: true,
+      total: enquiries.length,
+      enquiries,
+    });
+  } catch (err) {
+    console.error("enquiries/all error:", err);
+    return res
+      .status(500)
+      .json({ error: "Something went wrong", details: err.message });
+  }
+});
+
 
 app.post("/auth/google-login", async (req, res) => {
   try {
@@ -408,6 +481,8 @@ app.post("/auth/google-login", async (req, res) => {
         firstName,
         lastName,
         profileImage,
+        enquiries: [],
+        phoneNo: null,
       });
 
       res.status(201).json({
@@ -444,246 +519,19 @@ app.post("/auth/update-phone", async (req, res) => {
   }
 });
 
-// app.get("/scuba/enquiries/all", async (req, res) => {
-//   try {
-//     const colRef = collection(db, "dive_hrzn_enquiries");
 
-//     const snapshot = await getDocs(colRef);
 
-//     const enquiries = snapshot.docs.map((doc) => ({
-//       id: doc.id,
-//       ...doc.data(),
-//     }));
-
-//     return res.status(200).json({
-//       success: true,
-//       total: enquiries.length,
-//       enquiries,
-//     });
-//   } catch (err) {
-//     console.error("Error fetching enquiries:", err);
-//     return res.status(500).json({ error: "Something went wrong" });
-//   }
-// });
-
-/**
- * GET /scuba/enquiries/all
- *
- * Query params:
- *  - skus             (comma separated) e.g. skus=SCUBA-EXP-DSD,SCUBA-EXP-BDAY
- *  - paymentStatuses  (comma separated)
- *  - statuses         (comma separated)
- *  - dateFrom         (YYYY-MM-DD or ISO)  (inclusive)
- *  - dateTo           (YYYY-MM-DD or ISO)  (inclusive)
- *  - today=true       (if present, overrides dateFrom/dateTo to today's range in server timezone)
- *  - q                (search exact phone or email)
- *  - pageSize         (number, default 50, max 200)
- *  - pageToken        (doc id of last item from previous page)
- *  - sortDir          asc | desc  (default desc)
- */
-function toArrayParam(value) {
-  if (!value) return null;
-  if (Array.isArray(value)) return value.map(String);
-  return String(value)
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
-}
-
-function parseDateParam(val) {
-  if (!val) return null;
-  // Accept YYYY-MM-DD or full ISO; create Date object at start of day (00:00) for from, and end for to handled by caller
-  const d = new Date(val);
-  if (isNaN(d.getTime())) return null;
-  return d;
-}
-
-app.get("/scuba/enquiries/all", async (req, res) => {
+app.get("/my/details/:email", async (req, res) => {
+  console.log("🚀 ~ get:")
   try {
-    const {
-      skus,
-      paymentStatuses,
-      statuses,
-      dateFrom,
-      dateTo,
-      today,
-      q,
-      pageSize = 50,
-      pageToken,
-      sortDir = "desc",
-      deal,
-    } = req.query || {};
-
-    const skusArr = toArrayParam(skus);
-    const payArr = toArrayParam(paymentStatuses);
-    const statusArr = toArrayParam(statuses);
-    const dealArr = toArrayParam(deal);
-
-    // Build base collection ref
-    const colRef = collection(db, "dive_hrzn_enquiries");
-
-    // We'll collect where filters in an array and apply them to the query progressively.
-    const filters = [];
-    let usedIn = false;
-
-    // Helper to attach equality vs in
-    const attachFilter = (arr, field) => {
-      if (!arr || arr.length === 0) return;
-      if (arr.length === 1) {
-        filters.push([field, "==", arr[0]]);
-      } else if (!usedIn && arr.length <= 10) {
-        filters.push([field, "in", arr]);
-        usedIn = true;
-      } else {
-        throw new Error(`Too many values for '${field}' (max 10 for 'in')`);
-      }
-    };
-
-    attachFilter(skusArr, "sku");
-    attachFilter(payArr, "paymentStatus");
-    attachFilter(statusArr, "status");
-    attachFilter(dealArr, "deal");
-
-    // Date range handling (assumes createdAt is Firestore Timestamp)
-    let fromTs = null;
-    let toTs = null;
-
-    if (
-      today !== undefined &&
-      (today === "true" || today === "1" || today === "True")
-    ) {
-      // Today's range in server timezone
-      const now = new Date();
-      const y = now.getFullYear(),
-        m = now.getMonth(),
-        d = now.getDate();
-      const start = new Date(Date.UTC(y, m, d, 0, 0, 0)); // midnight UTC of that local day may be off if you want local timezone
-      // If you need local timezone calculation, replace above with timezone-aware logic.
-      fromTs = Timestamp.fromDate(start);
-      const end = new Date(Date.UTC(y, m, d, 23, 59, 59, 999));
-      toTs = Timestamp.fromDate(end);
-    } else {
-      const df = parseDateParam(dateFrom);
-      const dt = parseDateParam(dateTo);
-      if (df) {
-        // start of day (00:00:00)
-        const s = new Date(
-          df.getFullYear(),
-          df.getMonth(),
-          df.getDate(),
-          0,
-          0,
-          0,
-          0
-        );
-        fromTs = Timestamp.fromDate(s);
-      }
-      if (dt) {
-        // end of day (23:59:59.999)
-        const e = new Date(
-          dt.getFullYear(),
-          dt.getMonth(),
-          dt.getDate(),
-          23,
-          59,
-          59,
-          999
-        );
-        toTs = Timestamp.fromDate(e);
-      }
-    }
-
-    if (fromTs && toTs) {
-      filters.push(["createdAt", ">=", fromTs]);
-      filters.push(["createdAt", "<=", toTs]);
-    } else if (fromTs) {
-      filters.push(["createdAt", ">=", fromTs]);
-    } else if (toTs) {
-      filters.push(["createdAt", "<=", toTs]);
-    }
-
-    // Search exact phone/email (if provided). We'll run these as separate queries if q is present.
-    if (q) {
-      // try phone exact first then email
-      const phoneQuery = query(
-        colRef,
-        where("phoneNo", "==", q),
-        orderBy("createdAt", sortDir === "asc" ? "asc" : "desc"),
-        fsLimit(Math.min(Number(pageSize) || 50, 200))
-      );
-      const snapPhone = await getDocs(phoneQuery);
-      if (!snapPhone.empty) {
-        const docs = snapPhone.docs.map((d) => ({ id: d.id, ...d.data() }));
-        return res.json({
-          success: true,
-          total: docs.length,
-          enquiries: docs,
-          nextPageToken:
-            docs.length === Math.min(Number(pageSize) || 50, 200)
-              ? docs[docs.length - 1].id
-              : null,
-        });
-      }
-      // fallback to email exact
-      const emailQuery = query(
-        colRef,
-        where("email", "==", q),
-        orderBy("createdAt", sortDir === "asc" ? "asc" : "desc"),
-        fsLimit(Math.min(Number(pageSize) || 50, 200))
-      );
-      const snapEmail = await getDocs(emailQuery);
-      const docs = snapEmail.docs.map((d) => ({ id: d.id, ...d.data() }));
-      return res.json({
-        success: true,
-        total: docs.length,
-        enquiries: docs,
-        nextPageToken:
-          docs.length === Math.min(Number(pageSize) || 50, 200)
-            ? docs[docs.length - 1].id
-            : null,
-      });
-    }
-
-    // Build the main query progressively
-    let qref = colRef;
-    for (const f of filters) {
-      const [field, op, val] = f;
-      qref = query(qref, where(field, op, val));
-    }
-
-    // Order by createdAt (required when using range filters on createdAt)
-    const dir = sortDir === "asc" ? "asc" : "desc";
-    qref = query(qref, orderBy("createdAt", dir));
-
-    // Handle cursor-based pagination via pageToken (doc id)
-    const limitNum = Math.min(Number(pageSize) || 50, 200);
-    qref = query(qref, fsLimit(limitNum));
-
-    if (pageToken) {
-      // try to fetch the doc and startAfter it
-      const cursorRef = doc(db, "dive_hrzn_enquiries", pageToken);
-      const cursorSnap = await getDoc(cursorRef);
-      if (cursorSnap.exists()) {
-        qref = query(qref, startAfter(cursorSnap));
-      } // if invalid token, we ignore
-    }
-
-    const snap = await getDocs(qref);
-    const enquiries = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-    const nextPageToken =
-      enquiries.length === limitNum ? enquiries[enquiries.length - 1].id : null;
-
-    return res.json({
-      success: true,
-      total: enquiries.length,
-      nextPageToken,
-      enquiries,
-    });
-  } catch (err) {
-    console.error("enquiries/all error:", err);
-    return res
-      .status(500)
-      .json({ error: "Something went wrong", details: err.message });
+    const { email } = req.params;
+    const existing = await getData(db, "dive_hrzn_users", email);
+    if (existing) {
+      res.status(200).json({ message: "logged_In", data: existing });
+    } 
+  } catch (error) {
+    console.error(`🚀path:/ :error ${error}`);
+    res.status(500).json({ status: "Internal Server Error", message: error });
   }
 });
 
