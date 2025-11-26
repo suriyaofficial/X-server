@@ -58,7 +58,10 @@ if (!BOT_TOKEN) {
   throw new Error("Missing BOT_TOKEN in environment");
 }
 const bot = new TelegramBot(BOT_TOKEN, { polling: false });
+const BASE_URL = process.env.BASE_URL || "https://server-ag3p.onrender.com";
 
+// Matches both CInvoiceID and CEstimateID Zoho links
+const ZOHO_LINK_REGEX = /^https:\/\/zohoinvoicepay\.in\/invoice\/scuba\/secure\?(CInvoiceID|CEstimateID)=[A-Za-z0-9-]+$/;
 app.get("/", function (req, res) {
   let option = { root: path.join(__dirname) };
   let fileName = "index.html";
@@ -174,7 +177,7 @@ app.get("/scuba/:sku", async (req, res) => {
   }
 });
 
-app.get("/quote/:code", async (req, res) => {
+app.get("/view/:kind/:code", async (req, res) => {
   const code = req.params.code;
   const usersCollectionRef = collection(db, "dive_hrzn_shortlinks");
   const userDocRef = doc(usersCollectionRef, code);
@@ -185,7 +188,7 @@ app.get("/quote/:code", async (req, res) => {
       .json({ status: "Not Found", message: "scuba document not found" });
   }
   const data = snap.data();
-  return res.redirect(data.longUrl);
+  return res.redirect(data.link);
 });
 
 function generateShortCode(length = 6) {
@@ -198,26 +201,42 @@ function generateShortCode(length = 6) {
   return code;
 }
 
-app.post("/api/create-short-url", async (req, res) => {
-  const { longUrl } = req.body;
-  const data = req.body;
-  const code = generateShortCode();
+async function createZohoShortlink(enqId, link) {
+  if (!link) {
+    throw new Error("Link is required");
+  }
+  const trimmed = link.trim();
+  const match = trimmed.match(ZOHO_LINK_REGEX);
+  if (!match) {
+    throw new Error("Invalid Zoho invoice/estimate link format");
+  }
+  const idType = match[1]; // "CInvoiceID" or "CEstimateID"
+  const kind = idType === "CInvoiceID" ? "invoice" : "quote";
+  const data = {
+    enqId,
+    kind,              // "invoice" | "quote"
+    link: trimmed,
+    active: true,
+    createdAt: new Date().toISOString(),
+  };
   const usersCollectionRef = collection(db, "dive_hrzn_shortlinks");
-  const userDocRef = doc(usersCollectionRef, code);
-  await setDoc(userDocRef, data);
-  res.json({
-    shortUrl: `https://server-ag3p.onrender.com/quote/${code}`,
-  });
-});
+  const userDocRef = doc(usersCollectionRef, enqId);
+  await setDoc(userDocRef, data, { merge: true });
+  const shortUrl = `${BASE_URL}/view/${kind}/${enqId}`;
+  return shortUrl;
+}
 
 // Helper: escape text for MarkdownV2
 function escapeMarkdownV2(text = "") {
   return String(text).replace(/([_\*\[\]\(\)~`>#+\-=|{}\.!\\])/g, "\\$1");
 }
 
-app.post("/scuba/booking/request", async (req, res) => {
+app.post("/scuba/enquiries/request", async (req, res) => {
   try {
     const body = req.body || {};
+    console.log("🚀 ~ body:", body)
+    console.log("🚀 ~ body:", body)
+    console.log("🚀 ~ body:", body)
 
     let data = {
       name: body.name,
@@ -227,12 +246,16 @@ app.post("/scuba/booking/request", async (req, res) => {
       sku: body.sku,
       initiatedDate:
         body.initiatedDate || new Date().toISOString().split("T")[0],
-      preferredDate: "",
+
       groupSize: 0,
-      knowSwimming: "",
+
       status: "Created",
       paymentStatus: "",
       createdAt: serverTimestamp(),
+      knowSwimming: false,
+      preferredDate: null, // keep empty for now, will store timestamp later
+      link: "",
+      deal: "open",
     };
 
     if (!data.name) return res.status(400).json({ error: "name required" });
@@ -335,6 +358,34 @@ app.post("/scuba/booking/request", async (req, res) => {
       code,
       saved: data,
       telegramSentTo: chatIds.length,
+    });
+  } catch (err) {
+    console.error("Error in /scuba/booking/request:", err);
+    return res.status(500).json({ error: "Something went wrong" });
+  }
+});
+app.post("/scuba/enquiries/update/:enqId", async (req, res) => {
+  try {
+    const body = req.body || {};
+    console.log("🚀 ~ body:", body)
+    const enqId = req.params.enqId || {};
+    const ref = doc(db, "dive_hrzn_enquiries", enqId);
+    if (body?.link) {
+      try {
+        body.link = await createZohoShortlink(enqId, body.link);
+      } catch (e) {
+        console.error("Zoho link error:", e.message);
+        return res.status(400).json({ error: e.message });
+      }
+    }
+    updateDoc(ref, body).catch((err) => {
+      console.error(`Failed updating ${enqId}`, err.code);
+      return null;
+    });
+    return res.status(201).json({
+      success: true,
+      enqId,
+      updated: body,
     });
   } catch (err) {
     console.error("Error in /scuba/booking/request:", err);
@@ -553,35 +604,16 @@ app.get("/scuba/enquiries/all", async (req, res) => {
 
     // Search exact phone/email (if provided). We'll run these as separate queries if q is present.
     if (q) {
-        // try phone exact first then email
-        const phoneQuery = query(
-          colRef,
-          where("phoneNo", "==", q),
-          orderBy("createdAt", sortDir === "asc" ? "asc" : "desc"),
-          fsLimit(Math.min(Number(pageSize) || 50, 200))
-        );
-        const snapPhone = await getDocs(phoneQuery);
-        if (!snapPhone.empty) {
-          const docs = snapPhone.docs.map((d) => ({ id: d.id, ...d.data() }));
-          return res.json({
-            success: true,
-            total: docs.length,
-            enquiries: docs,
-            nextPageToken:
-              docs.length === Math.min(Number(pageSize) || 50, 200)
-                ? docs[docs.length - 1].id
-                : null,
-          });
-        }
-        // fallback to email exact
-        const emailQuery = query(
-          colRef,
-          where("email", "==", q),
-          orderBy("createdAt", sortDir === "asc" ? "asc" : "desc"),
-          fsLimit(Math.min(Number(pageSize) || 50, 200))
-        );
-        const snapEmail = await getDocs(emailQuery);
-        const docs = snapEmail.docs.map((d) => ({ id: d.id, ...d.data() }));
+      // try phone exact first then email
+      const phoneQuery = query(
+        colRef,
+        where("phoneNo", "==", q),
+        orderBy("createdAt", sortDir === "asc" ? "asc" : "desc"),
+        fsLimit(Math.min(Number(pageSize) || 50, 200))
+      );
+      const snapPhone = await getDocs(phoneQuery);
+      if (!snapPhone.empty) {
+        const docs = snapPhone.docs.map((d) => ({ id: d.id, ...d.data() }));
         return res.json({
           success: true,
           total: docs.length,
@@ -591,6 +623,25 @@ app.get("/scuba/enquiries/all", async (req, res) => {
               ? docs[docs.length - 1].id
               : null,
         });
+      }
+      // fallback to email exact
+      const emailQuery = query(
+        colRef,
+        where("email", "==", q),
+        orderBy("createdAt", sortDir === "asc" ? "asc" : "desc"),
+        fsLimit(Math.min(Number(pageSize) || 50, 200))
+      );
+      const snapEmail = await getDocs(emailQuery);
+      const docs = snapEmail.docs.map((d) => ({ id: d.id, ...d.data() }));
+      return res.json({
+        success: true,
+        total: docs.length,
+        enquiries: docs,
+        nextPageToken:
+          docs.length === Math.min(Number(pageSize) || 50, 200)
+            ? docs[docs.length - 1].id
+            : null,
+      });
     }
 
     // Build the main query progressively
@@ -648,7 +699,9 @@ app.get("/temp/fix-createdAt", async (req, res) => {
 
       updates.push(
         updateDoc(ref, {
-          deal: "open",
+          knowSwimming: false,
+          preferredDate: null, // keep empty for now, will store timestamp later
+          link: "",
         }).catch((err) => {
           console.error(`Failed updating ${id}`, err.code);
           return null;
