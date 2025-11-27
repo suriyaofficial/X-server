@@ -28,7 +28,7 @@ const {
   arrayUnion,
 
   limit: fsLimit,
-
+  deleteField,
   startAfter,
 } = require("@firebase/firestore");
 const { buildCSV } = require("./createCSV");
@@ -58,7 +58,7 @@ if (!BOT_TOKEN) {
   throw new Error("Missing BOT_TOKEN in environment");
 }
 const bot = new TelegramBot(BOT_TOKEN, { polling: false });
-const BASE_URL = process.env.BASE_URL || "https://server-ag3p.onrender.com";
+const BASE_URL = process.env.BASE_URL || "http://localhoss:3100";
 
 // Matches both CInvoiceID and CEstimateID Zoho links
 const ZOHO_LINK_REGEX =
@@ -179,17 +179,59 @@ app.get("/sku/details/:sku", async (req, res) => {
 });
 
 app.get("/view/:kind/:code", async (req, res) => {
-  const code = req.params.code;
-  const usersCollectionRef = collection(db, "dive_hrzn_shortlinks");
-  const userDocRef = doc(usersCollectionRef, code);
-  const snap = await getDoc(userDocRef);
-  if (!snap.exists()) {
+  try {
+    const { kind, code } = req.params;
+    const allowedKinds = ["invoice", "quote", "refund-receipt"];
+    if (!allowedKinds.includes(kind)) {
+      return res
+        .status(400)
+        .json({ status: "Bad Request", message: "Invalid kind" });
+    }
+    const usersCollectionRef = collection(db, "dive_hrzn_shortlinks");
+    const userDocRef = doc(usersCollectionRef, code);
+    const snap = await getDoc(userDocRef);
+    if (!snap.exists()) {
+      return res
+        .status(404)
+        .json({ status: "Not Found", message: "document not found" });
+    }
+    const data = snap.data();
+    let targetUrl = null;
+    if (kind === "invoice" || kind === "quote") {
+      targetUrl = data.billingLink;
+    } else if (kind === "refund-receipt") {
+      targetUrl = data.refundReceiptLink;
+    }
+    return res.redirect(targetUrl);
+  } catch (err) {
+    console.error("Error in /view/:kind/:code:", err);
     return res
-      .status(404)
-      .json({ status: "Not Found", message: "scuba document not found" });
+      .status(500)
+      .json({ status: "Error", message: "Something went wrong" });
   }
-  const data = snap.data();
-  return res.redirect(data.link);
+});
+app.get("/pay/:code", async (req, res) => {
+  try {
+    const { code } = req.params;
+
+    const usersCollectionRef = collection(db, "dive_hrzn_shortlinks");
+    const userDocRef = doc(usersCollectionRef, code);
+    const snap = await getDoc(userDocRef);
+    if (!snap.exists()) {
+      return res
+        .status(404)
+        .json({ status: "Not Found", message: "document not found" });
+    }
+    const data = snap.data();
+
+    targetUrl = data.paymentLink;
+    return res.redirect(targetUrl);
+  } catch (err) {
+    console.error("Error in /view/:kind/:code:", err);
+    return res
+      .status(500)
+      .json({ status: "Error", message: "Something went wrong" });
+  }
 });
 
 function generateShortCode(length = 6) {
@@ -202,27 +244,37 @@ function generateShortCode(length = 6) {
   return code;
 }
 
-async function createZohoShortlink(enqId, link) {
-  if (!link) {
+async function upsertShortlink(enqId, partialData) {
+  const usersCollectionRef = collection(db, "dive_hrzn_shortlinks");
+  const userDocRef = doc(usersCollectionRef, enqId);
+  await setDoc(
+    userDocRef,
+    {
+      ...partialData,
+      updatedAt: new Date().toISOString(),
+    },
+    { merge: true }
+  );
+}
+
+// Billing (quote/invoice) Zoho helper
+async function createZohoShortlink(enqId, billingLink) {
+  if (!billingLink) {
     throw new Error("Link is required");
   }
-  const trimmed = link.trim();
+  const trimmed = billingLink.trim();
   const match = trimmed.match(ZOHO_LINK_REGEX);
   if (!match) {
     throw new Error("Invalid Zoho invoice/estimate link format");
   }
   const idType = match[1]; // "CInvoiceID" or "CEstimateID"
   const kind = idType === "CInvoiceID" ? "invoice" : "quote";
-  const data = {
-    enqId,
+  await upsertShortlink(enqId, {
     kind, // "invoice" | "quote"
-    link: trimmed,
-    active: true,
-    createdAt: new Date().toISOString(),
-  };
-  const usersCollectionRef = collection(db, "dive_hrzn_shortlinks");
-  const userDocRef = doc(usersCollectionRef, enqId);
-  await setDoc(userDocRef, data, { merge: true });
+    billingLink: trimmed,
+    billingLinkActive: true,
+    billingLinkCreatedAt: new Date().toISOString(),
+  });
   const shortUrl = `${BASE_URL}/view/${kind}/${enqId}`;
   return shortUrl;
 }
@@ -240,7 +292,7 @@ app.post("/enquiries/request", async (req, res) => {
     console.log("🚀 ~ body:", body);
 
     let data = {
-      name: body.name,
+      name: body?.name || null,
       email: body.email,
       phoneNo: body.phoneNo,
       title: body.title,
@@ -254,8 +306,11 @@ app.post("/enquiries/request", async (req, res) => {
       paymentStatus: "",
       createdAt: serverTimestamp(),
       preferredDate: null, // keep empty for now, will store timestamp later
-      link: "",
       deal: "open",
+      price: null,
+      billingLink: null,
+      paymentLink: null,
+      refundReceiptLink: null,
     };
 
     if (!data.name) return res.status(400).json({ error: "name required" });
@@ -274,17 +329,99 @@ app.post("/enquiries/request", async (req, res) => {
     data.enqNo = code;
     const enquiriesDocRef = doc(enquiriesCollectionRef, code);
     await setDoc(enquiriesDocRef, data);
-    const usersDocRef = doc(db, "dive_hrzn_users", body.email);
-    await updateDoc(usersDocRef, {
-      enquiries: arrayUnion(code),
-    });
-    const phoneDigits = data.phoneNo.replace(/\D+/g, "");
-    const whatsappText =
-      "🌊 Hey! You just reached the underwater world. Our dive team will get back to you shortly 🤿✨";
+    const usersDocRef = doc(db, "dive_hrzn_users", data.email);
 
-    const whatsappURL = `https://wa.me/${phoneDigits}?text=${encodeURIComponent(
-      whatsappText
+    try {
+      // If user exists → append enquiry id
+      await updateDoc(usersDocRef, {
+        phoneNo: data.phoneNo, // keep phone up to date
+        enquiries: arrayUnion(code),
+      });
+    } catch (err) {
+      if (err.code === "not-found") {
+        // User doesn't exist → create new user doc
+        await setDoc(usersDocRef, {
+          email: data.email,
+          phoneNo: data.phoneNo,
+          enquiries: [code],
+          createdAt: serverTimestamp(),
+        });
+      } else {
+        // Some other error → rethrow so it hits outer catch
+        throw err;
+      }
+    }
+    const phoneDigits = data.phoneNo.replace(/\D+/g, "");
+
+    // ---------- NEW: prebuild all admin links for this enquiry ----------
+
+    // In production, move this to an env var like BASE_APP_URL
+    const BASE_URL =
+      process.env.APP_BASE_URL || "https://server-ag3p.onrender.com";
+
+    // code is your enquiry number, e.g. ENQ-020
+    const quoteUrl = `${BASE_URL}/view/quote/${code}`;
+    const invoiceUrl = `${BASE_URL}/view/invoice/${code}`;
+    const paymentUrl = `${BASE_URL}/pay/${code}`;
+    const refundReceiptUrl = `${BASE_URL}/view/refund-receipt/${code}`;
+    const trackUrl = `${BASE_URL}/my-enquiries/${code}`;
+    const firstName = (data.name || "").split(" ")[0] || "Buddy";
+    let welcomeMsg = "";
+
+    if (data.sku.startsWith("SCUBA")) {
+      welcomeMsg = `🌊 Hey ${firstName}!  
+Our dive team is currently underwater exploring the reefs 🤿🐠  
+We’ll reach out shortly once they surface!  
+
+Check your enquiry status here:
+${trackUrl}
+
+`;
+    } else if (data.sku.startsWith("SKY")) {
+      welcomeMsg = `🪂 Hey ${firstName}!  
+Our sky team is up in the air right now ✈️🌤️  
+We’ll reach out shortly as soon as they land!  
+
+Track your booking progress here:  
+${trackUrl}
+
+`;
+    } else {
+      welcomeMsg = `
+👋 Hi ${firstName}!  
+Thanks for reaching out — we’ll contact you shortly!  
+Track your enquiry:  
+${trackUrl}
+`;
+    }
+
+    // Template builders
+    const templates = {
+      welcome: welcomeMsg,
+      quote: `Hi ${firstName}, here is your quote for ${data.title}:\n${quoteUrl}\n\nIf you have any questions, feel free to reply to this message.`,
+      invoice: `Hi ${firstName}, here is your invoice for ${data.title}:\n${invoiceUrl}\n\nPlease review it and let us know if everything looks good.`,
+      payment: `Hi ${firstName}, you can complete your booking payment for ${data.title} using this link:\n${paymentUrl}\n\nOnce paid, we’ll confirm your booking.`,
+      refund: `Hi ${firstName}, your refund for ${data.title} has been processed.\nYou can view your refund receipt here:\n${refundReceiptUrl}`,
+    };
+
+    // WhatsApp URLs with message templates
+    const waQuoteUrl = `https://wa.me/${phoneDigits}?text=${encodeURIComponent(
+      templates.quote
     )}`;
+    const waInvoiceUrl = `https://wa.me/${phoneDigits}?text=${encodeURIComponent(
+      templates.invoice
+    )}`;
+    const waPaymentUrl = `https://wa.me/${phoneDigits}?text=${encodeURIComponent(
+      templates.payment
+    )}`;
+    const waRefundUrl = `https://wa.me/${phoneDigits}?text=${encodeURIComponent(
+      templates.refund
+    )}`;
+    const waWelcomeUrl = `https://wa.me/${phoneDigits}?text=${encodeURIComponent(
+      templates.welcome
+    )}`;
+
+    // ---------- existing message build ----------
 
     const nameEsc = escapeMarkdownV2(data.name || "N/A");
     const phoneEsc = escapeMarkdownV2(data.phoneNo || "N/A");
@@ -331,12 +468,18 @@ app.post("/enquiries/request", async (req, res) => {
           reply_markup: {
             inline_keyboard: [
               [
+                { text: "📑 Send Quote", url: waQuoteUrl },
+                { text: "📄 Send Invoice", url: waInvoiceUrl },
+              ],
+              [
+                { text: "💳 Send Payment Link", url: waPaymentUrl },
+                { text: "💸 Send Refund Receipt", url: waRefundUrl },
+              ],
+              [
                 {
-                  text: "💬 WhatsApp Customer",
-                  url: whatsappURL,
+                  text: "💬 Welcome Msg",
+                  url: waWelcomeUrl,
                 },
-                // Optional: add a quick "Mark In Progress" callback button if you want later
-                // { text: "🔁 Mark In Progress", callback_data: `mark:${code}:in_progress` }
               ],
             ],
           },
@@ -355,7 +498,7 @@ app.post("/enquiries/request", async (req, res) => {
 
     return res.status(201).json({
       success: true,
-      enquiryId:code,
+      enquiryId: code,
       saved: data,
       telegramSentTo: chatIds.length,
     });
@@ -370,11 +513,48 @@ app.post("/enquiries/update/:enqId", async (req, res) => {
     console.log("🚀 ~ body:", body);
     const enqId = req.params.enqId || {};
     const ref = doc(db, "dive_hrzn_enquiries", enqId);
-    if (body?.link) {
+    if (body.billingLink) {
       try {
-        body.link = await createZohoShortlink(enqId, body.link);
+        body.billingLink = await createZohoShortlink(enqId, body.billingLink);
       } catch (e) {
-        console.error("Zoho link error:", e.message);
+        console.error("Zoho billing link error:", e.message);
+        return res.status(400).json({ error: e.message });
+      }
+    }
+
+    // 2️⃣ Payment link → store raw in shortlinks, expose short URL in enquiry
+    if (body.paymentLink) {
+      try {
+        const raw = body.paymentLink.trim();
+
+        await upsertShortlink(enqId, {
+          paymentLink: raw,
+          paymentLinkActive: true,
+          paymentLinkCreatedAt: new Date().toISOString(),
+        });
+
+        // Exposed to customer as /pay/:enqId
+        body.paymentLink = `${BASE_URL}/pay/${enqId}`;
+      } catch (e) {
+        console.error("Payment link error:", e.message);
+        return res.status(400).json({ error: e.message });
+      }
+    }
+
+    // 3️⃣ Refund receipt link → store raw in shortlinks, expose short URL in enquiry
+    if (body.refundReceiptLink) {
+      try {
+        const raw = body.refundReceiptLink.trim();
+
+        await upsertShortlink(enqId, {
+          refundReceiptLink: raw,
+          refundReceiptLinkActive: true,
+          refundReceiptLinkCreatedAt: new Date().toISOString(),
+        });
+
+        body.refundReceiptLink = `${BASE_URL}/view/refund-receipt/${enqId}`;
+      } catch (e) {
+        console.error("Refund receipt link error:", e.message);
         return res.status(400).json({ error: e.message });
       }
     }
@@ -410,29 +590,18 @@ app.get("/all/enquiries", async (req, res) => {
         enquiries, // always an array
       });
     }
+    if (q || deal) {
+      let qRef = colRef;
 
-    // 2️⃣ If "q" is provided: search by email only
-    if (q) {
-      const qRef = query(colRef, where("email", "==", q));
+      if (q) {
+        qRef = query(qRef, where("email", "==", q));
+      }
+
+      if (deal) {
+        qRef = query(qRef, where("deal", "==", deal));
+      }
+
       const snap = await getDocs(qRef);
-
-      const enquiries = snap.docs.map((d) => ({
-        id: d.id,
-        ...d.data(),
-      }));
-
-      return res.json({
-        success: true,
-        total: enquiries.length,
-        enquiries,
-      });
-    }
-
-    // 3️⃣ If "deal" is provided: filter by deal
-    if (deal) {
-      const qRef = query(colRef, where("deal", "==", deal));
-      const snap = await getDocs(qRef);
-
       const enquiries = snap.docs.map((d) => ({
         id: d.id,
         ...d.data(),
@@ -465,7 +634,6 @@ app.get("/all/enquiries", async (req, res) => {
   }
 });
 
-
 app.post("/auth/google-login", async (req, res) => {
   try {
     const { email, firstName, lastName, profileImage } = req.body;
@@ -483,6 +651,7 @@ app.post("/auth/google-login", async (req, res) => {
         profileImage,
         enquiries: [],
         phoneNo: null,
+        createdAt: serverTimestamp(),
       });
 
       res.status(201).json({
@@ -493,6 +662,7 @@ app.post("/auth/google-login", async (req, res) => {
           lastName,
           profileImage,
           phoneNo: null,
+          createdAt: serverTimestamp(),
         },
       });
     }
@@ -519,16 +689,14 @@ app.post("/auth/update-phone", async (req, res) => {
   }
 });
 
-
-
 app.get("/my/details/:email", async (req, res) => {
-  console.log("🚀 ~ get:")
+  console.log("🚀 ~ get:");
   try {
     const { email } = req.params;
     const existing = await getData(db, "dive_hrzn_users", email);
     if (existing) {
       res.status(200).json({ message: "logged_In", data: existing });
-    } 
+    }
   } catch (error) {
     console.error(`🚀path:/ :error ${error}`);
     res.status(500).json({ status: "Internal Server Error", message: error });
@@ -547,9 +715,10 @@ app.get("/temp/fix-createdAt", async (req, res) => {
 
       updates.push(
         updateDoc(ref, {
-          knowSwimming: false,
-          preferredDate: null, // keep empty for now, will store timestamp later
-          link: "",
+          link: deleteField(),
+          // billingLink: null,
+          // paymentLink: null,
+          // refundReceiptLink: null,
         }).catch((err) => {
           console.error(`Failed updating ${id}`, err.code);
           return null;
