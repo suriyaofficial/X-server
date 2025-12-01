@@ -58,7 +58,7 @@ if (!BOT_TOKEN) {
   throw new Error("Missing BOT_TOKEN in environment");
 }
 const bot = new TelegramBot(BOT_TOKEN, { polling: false });
-const BASE_URL = process.env.BASE_URL || "http://localhoss:3100";
+const BASE_URL = process.env.BASE_URL;
 
 // Matches both CInvoiceID and CEstimateID Zoho links
 const ZOHO_LINK_REGEX =
@@ -356,8 +356,7 @@ app.post("/enquiries/request", async (req, res) => {
     // ---------- NEW: prebuild all admin links for this enquiry ----------
 
     // In production, move this to an env var like BASE_APP_URL
-    const BASE_URL =
-      process.env.APP_BASE_URL || "https://server-ag3p.onrender.com";
+    const BASE_URL = process.env.APP_BASE_URL;
 
     // code is your enquiry number, e.g. ENQ-020
     const quoteUrl = `${BASE_URL}/view/quote/${code}`;
@@ -574,7 +573,7 @@ app.post("/enquiries/update/:enqId", async (req, res) => {
 });
 app.get("/all/enquiries", async (req, res) => {
   try {
-    const { deal, q, id } = req.query || {};
+    const { deal, q, id, email } = req.query || {};
     const colRef = collection(db, "dive_hrzn_enquiries");
 
     // 1️⃣ If "id" is provided: get that single document by ID
@@ -582,7 +581,32 @@ app.get("/all/enquiries", async (req, res) => {
       const docRef = doc(db, "dive_hrzn_enquiries", id);
       const snap = await getDoc(docRef);
 
-      const enquiries = snap.exists() ? [{ id: snap.id, ...snap.data() }] : [];
+      if (!snap.exists()) {
+        // No document found with that ID
+        return res.json({
+          success: true,
+          total: 0,
+          enquiries: [],
+        });
+      }
+
+      const enquiry = { id: snap.id, ...snap.data() };
+
+      // 2️⃣ If both id and email are provided, validate email
+      if (email) {
+        const storedEmail = (enquiry.email || "").trim().toLowerCase();
+        const providedEmail = String(email).trim().toLowerCase();
+
+        if (storedEmail !== providedEmail) {
+          return res.status(401).json({
+            success: false,
+            message: "Authentication failed. Email does not match.",
+          });
+        }
+      }
+
+      // 3️⃣ If only id (or email matched), return same result as before
+      const enquiries = [enquiry];
 
       return res.json({
         success: true,
