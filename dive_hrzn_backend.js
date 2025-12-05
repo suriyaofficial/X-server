@@ -51,7 +51,19 @@ server.listen(port, () => {
   console.log(`🚀 Server is running on http://localhost:${port}`);
 });
 // import/initialize db and generateShortCode as you already have
+const admin = require("firebase-admin");
+const { authorization, adminAuth, verifyUserJwt } = require("./middleware/auth");
+const serviceAccount = {
+  project_id: process.env.PROJECT_ID,
+  client_email: process.env.CLIENT_EMAIL,
+  private_key: process.env.PRIVATE_KEY.replace(/\\n/g, "\n"),
+};
 
+if (!admin.apps.length) {
+  admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount),
+  });
+}
 // Init Telegram bot (no polling needed if only sending messages)
 const BOT_TOKEN = process.env.BOT_TOKEN;
 if (!BOT_TOKEN) {
@@ -178,10 +190,14 @@ app.get("/sku/details/:sku", async (req, res) => {
   }
 });
 
-app.get("/view/:kind/:code", async (req, res) => {
+app.get("/link/:kind/:code/", async (req, res) => {
   try {
     const { kind, code } = req.params;
-    const allowedKinds = ["invoice", "quote", "refund-receipt"];
+    const { token } = req.query;
+    console.log("🚀 ~ token:", token);
+    verifyUserJwt(token);
+
+    const allowedKinds = ["invoice", "quote", "refund-receipt", "pay"];
     if (!allowedKinds.includes(kind)) {
       return res
         .status(400)
@@ -196,35 +212,16 @@ app.get("/view/:kind/:code", async (req, res) => {
         .json({ status: "Not Found", message: "document not found" });
     }
     const data = snap.data();
+    console.log("🚀 ~ data:", data);
     let targetUrl = null;
     if (kind === "invoice" || kind === "quote") {
       targetUrl = data.billingLink;
     } else if (kind === "refund-receipt") {
       targetUrl = data.refundReceiptLink;
+    } else if (kind === "pay") {
+      console.log("🚀 ~ kind:", kind);
+      targetUrl = data.paymentLink;
     }
-    return res.redirect(targetUrl);
-  } catch (err) {
-    console.error("Error in /view/:kind/:code:", err);
-    return res
-      .status(500)
-      .json({ status: "Error", message: "Something went wrong" });
-  }
-});
-app.get("/pay/:code", async (req, res) => {
-  try {
-    const { code } = req.params;
-
-    const usersCollectionRef = collection(db, "dive_hrzn_shortlinks");
-    const userDocRef = doc(usersCollectionRef, code);
-    const snap = await getDoc(userDocRef);
-    if (!snap.exists()) {
-      return res
-        .status(404)
-        .json({ status: "Not Found", message: "document not found" });
-    }
-    const data = snap.data();
-
-    targetUrl = data.paymentLink;
     return res.redirect(targetUrl);
   } catch (err) {
     console.error("Error in /view/:kind/:code:", err);
@@ -275,7 +272,7 @@ async function createZohoShortlink(enqId, billingLink) {
     billingLinkActive: true,
     billingLinkCreatedAt: new Date().toISOString(),
   });
-  const shortUrl = `${BASE_URL}/view/${kind}/${enqId}`;
+  const shortUrl = `${BASE_URL}/link/${kind}/${enqId}`;
   return shortUrl;
 }
 
@@ -284,7 +281,7 @@ function escapeMarkdownV2(text = "") {
   return String(text).replace(/([_\*\[\]\(\)~`>#+\-=|{}\.!\\])/g, "\\$1");
 }
 
-app.post("/enquiries/request", async (req, res) => {
+app.post("/enquiries/request", authorization, async (req, res) => {
   try {
     const body = req.body || {};
     console.log("🚀 ~ body:", body);
@@ -293,7 +290,7 @@ app.post("/enquiries/request", async (req, res) => {
 
     let data = {
       name: body?.name || null,
-      email: body.email,
+      email: req.user.email,
       phoneNo: body.phoneNo,
       title: body.title,
       sku: body.sku,
@@ -359,10 +356,10 @@ app.post("/enquiries/request", async (req, res) => {
     const BASE_URL = process.env.APP_BASE_URL;
 
     // code is your enquiry number, e.g. ENQ-020
-    const quoteUrl = `${BASE_URL}/view/quote/${code}`;
-    const invoiceUrl = `${BASE_URL}/view/invoice/${code}`;
-    const paymentUrl = `${BASE_URL}/pay/${code}`;
-    const refundReceiptUrl = `${BASE_URL}/view/refund-receipt/${code}`;
+    const quoteUrl = `${BASE_URL}/link/quote/${code}`;
+    const invoiceUrl = `${BASE_URL}/link/invoice/${code}`;
+    const paymentUrl = `${BASE_URL}/link/pay/${code}`;
+    const refundReceiptUrl = `${BASE_URL}/link/refund-receipt/${code}`;
     const trackUrl = `${BASE_URL}/my-enquiries/${code}`;
     const firstName = (data.name || "").split(" ")[0] || "Buddy";
     let welcomeMsg = "";
@@ -506,7 +503,7 @@ ${trackUrl}
     return res.status(500).json({ error: "Something went wrong" });
   }
 });
-app.post("/enquiries/update/:enqId", async (req, res) => {
+app.post("/enquiries/update/:enqId",adminAuth, async (req, res) => {
   try {
     const body = req.body || {};
     console.log("🚀 ~ body:", body);
@@ -533,7 +530,7 @@ app.post("/enquiries/update/:enqId", async (req, res) => {
         });
 
         // Exposed to customer as /pay/:enqId
-        body.paymentLink = `${BASE_URL}/pay/${enqId}`;
+        body.paymentLink = `${BASE_URL}/link/pay/${enqId}`;
       } catch (e) {
         console.error("Payment link error:", e.message);
         return res.status(400).json({ error: e.message });
@@ -571,9 +568,11 @@ app.post("/enquiries/update/:enqId", async (req, res) => {
     return res.status(500).json({ error: "Something went wrong" });
   }
 });
-app.get("/all/enquiries", async (req, res) => {
+app.get("/all/enquiries", authorization, async (req, res) => {
   try {
-    const { deal, q, id, email } = req.query || {};
+    const { deal, q, id } = req.query || {};
+    const email = req.user.email;
+
     const colRef = collection(db, "dive_hrzn_enquiries");
 
     // 1️⃣ If "id" is provided: get that single document by ID
@@ -591,21 +590,78 @@ app.get("/all/enquiries", async (req, res) => {
       }
 
       const enquiry = { id: snap.id, ...snap.data() };
+      const enquiries = [enquiry];
 
-      // 2️⃣ If both id and email are provided, validate email
-      if (email) {
-        const storedEmail = (enquiry.email || "").trim().toLowerCase();
-        const providedEmail = String(email).trim().toLowerCase();
+      return res.json({
+        success: true,
+        total: enquiries.length,
+        enquiries, // always an array
+      });
+    }
+    if (q || email || deal) {
+      let qRef = colRef;
 
-        if (storedEmail !== providedEmail) {
-          return res.status(401).json({
-            success: false,
-            message: "Authentication failed. Email does not match.",
-          });
-        }
+      if (q || email) {
+        qRef = query(qRef, where("email", "==", q || email));
       }
 
-      // 3️⃣ If only id (or email matched), return same result as before
+      if (deal) {
+        qRef = query(qRef, where("deal", "==", deal));
+      }
+
+      const snap = await getDocs(qRef);
+      const enquiries = snap.docs.map((d) => ({
+        id: d.id,
+        ...d.data(),
+      }));
+
+      return res.json({
+        success: true,
+        total: enquiries.length,
+        enquiries,
+      });
+    }
+
+    // 4️⃣ No params: return ALL documents in the collection
+    const snap = await getDocs(colRef);
+    const enquiries = snap.docs.map((d) => ({
+      id: d.id,
+      ...d.data(),
+    }));
+
+    return res.json({
+      success: true,
+      total: enquiries.length,
+      enquiries,
+    });
+  } catch (err) {
+    console.error("enquiries/all error:", err);
+    return res
+      .status(500)
+      .json({ error: "Something went wrong", details: err.message });
+  }
+});
+app.get("/all/enquiries/admin",adminAuth, async (req, res) => {
+  try {
+    const { deal, q, id } = req.query || {};
+
+    const colRef = collection(db, "dive_hrzn_enquiries");
+
+    // 1️⃣ If "id" is provided: get that single document by ID
+    if (id) {
+      const docRef = doc(db, "dive_hrzn_enquiries", id);
+      const snap = await getDoc(docRef);
+
+      if (!snap.exists()) {
+        // No document found with that ID
+        return res.json({
+          success: true,
+          total: 0,
+          enquiries: [],
+        });
+      }
+
+      const enquiry = { id: snap.id, ...snap.data() };
       const enquiries = [enquiry];
 
       return res.json({
@@ -658,46 +714,71 @@ app.get("/all/enquiries", async (req, res) => {
   }
 });
 
-app.post("/auth/google-login", async (req, res) => {
+// ⬇️ IMPORTANT: add middleware here
+app.post("/auth/google-login", authorization, async (req, res) => {
+  console.log("🚀 ~ req:", req);
   try {
-    const { email, firstName, lastName, profileImage } = req.body;
+    // ✅ Get data from verified Firebase token
+    const { email, name, picture, uid } = req.user;
+
+    if (!email) {
+      return res.status(400).json({ error: "Email not found in token" });
+    }
+
+    // Split name into first / last (simple logic)
+    let firstName = "";
+    let lastName = "";
+    if (name) {
+      const parts = name.split(" ");
+      firstName = parts[0];
+      lastName = parts.slice(1).join(" ");
+    }
+
+    // 🔍 Check if user already exists
     const existing = await getData(db, "dive_hrzn_users", email);
+
     if (existing) {
       console.log(`🚀-*-*-* ${email} logged_In -*-*-*🚀`);
-      res.status(200).json({ message: "logged_In", data: existing });
-    } else {
-      const usersCollectionRef = collection(db, "dive_hrzn_users");
-      const userDocRef = doc(usersCollectionRef, email);
-      await setDoc(userDocRef, {
-        email,
-        firstName,
-        lastName,
-        profileImage,
-        enquiries: [],
-        phoneNo: null,
-        createdAt: serverTimestamp(),
-      });
-
-      res.status(201).json({
-        result: "user registered Successfully",
-        data: {
-          email,
-          firstName,
-          lastName,
-          profileImage,
-          phoneNo: null,
-          createdAt: serverTimestamp(),
-        },
-      });
+      return res
+        .status(200)
+        .json({ message: "logged_In", data: existing, token: req.token });
     }
+
+    // 🆕 New user: prepare object
+    const usersCollectionRef = collection(db, "dive_hrzn_users");
+    const userDocRef = doc(usersCollectionRef, email);
+
+    const newUser = {
+      uid,
+      email,
+      firstName,
+      lastName,
+      profileImage: picture || null,
+      enquiries: [],
+      phoneNo: null,
+      createdAt: serverTimestamp(), // Firestore server timestamp
+    };
+
+    // save in Firestore
+    await setDoc(userDocRef, newUser);
+    return res.status(201).json({
+      result: "user registered Successfully",
+      data: newUser,
+      token: req.token,
+    });
   } catch (error) {
-    console.error(`🚀path:/login :error ${error}`);
-    res.status(500).json({ status: "Internal Server Error", message: error });
+    console.error(`🚀path:/auth/google-login :error ${error}`);
+    return res.status(500).json({
+      status: "Internal Server Error",
+      message: error.message || error,
+    });
   }
 });
-app.post("/auth/update-phone", async (req, res) => {
+
+app.post("/auth/update-phone", authorization, async (req, res) => {
   try {
-    const { email, phoneNo } = req.body;
+    const { phoneNo } = req.body;
+    const { email } = req.user;
     const existing = await getData(db, "dive_hrzn_users", email);
     const usersDocRef = doc(db, "dive_hrzn_users", email);
     let data = await updateDoc(usersDocRef, {
@@ -713,10 +794,10 @@ app.post("/auth/update-phone", async (req, res) => {
   }
 });
 
-app.get("/my/details/:email", async (req, res) => {
+app.get("/my/details", authorization, async (req, res) => {
   console.log("🚀 ~ get:");
   try {
-    const { email } = req.params;
+    const { email } = req.user;
     const existing = await getData(db, "dive_hrzn_users", email);
     if (existing) {
       res.status(200).json({ message: "logged_In", data: existing });
